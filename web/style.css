@@ -1,0 +1,2476 @@
+/* =========================================================
+   全电发票批量重命名工具 · 界面样式
+   风格：浅色大留白 + 柔和圆角 + 黑色主按钮（方案 C）
+        融合右侧单张详情面板（方案 B）
+   全部使用系统字体，不依赖联网加载
+   ========================================================= */
+
+:root {
+  --bg:        #F3F5F9;
+  --card:      #FFFFFF;
+  --line:      #E5E9F0;
+  --line-2:    #D6DCE6;
+  --ink:       #12161D;
+  --ink-2:     #5A6475;
+  --ink-3:     #98A1B2;
+  --blue:      #2D5BFF;
+  --blue-bg:   #EDF1FF;
+  --green:     #0E9F6E;
+  --green-bg:  #E8F7F1;
+  --amber:     #B5760A;
+  --amber-bg:  #FDF4E3;
+  /* ⚠️ 琥珀色**文字**压在 --amber-bg 淡底上时必须用这个加深值：
+     --amber 对淡底只有 3.46 对比度（不达 WCAG AA 的 4.5），实测过。
+     与上面 .cfNote 给绿色提示条加深色文字是同一个道理。*/
+  --amber-ink: #8A5606;
+  --red:       #D93A3F;
+  --red-bg:    #FDECEC;
+  /* 重复票的底色不再写死在这里 —— v2.5.7 起由 app.js 按组号算色相，
+     用内联 `--dup: hsl(h, 68%, 91%)` 传进来（一组一色、互不重复）。
+     所以 CSS 里只保留 `var(--dup, 兜底)` 的写法。 */
+  --r:         14px;
+  --shadow:    0 1px 2px rgba(18,22,29,.03), 0 12px 32px -20px rgba(18,22,29,.18);
+
+  --sans: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
+          "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  --disp: "Segoe UI Variable Display", "Segoe UI Semibold", "Segoe UI",
+          "Microsoft YaHei UI", system-ui, sans-serif;
+  --mono: Consolas, "Cascadia Mono", "Courier New", monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ============================================================
+   hidden 属性的兜底规则（重要，别删）
+   ------------------------------------------------------------
+   [hidden] 只在浏览器默认样式里是 display:none，**作者样式会盖过它**。
+   本文件给 .rulePanel / .modal / .toast 都写了 display:flex，
+   于是 el.hidden = true 只是加了个不生效的属性 —— 元素照样显示，
+   表现为「面板关不掉」「弹窗消不掉」。
+   （已踩过两次：先是 .modal/.toast，后是新加的 .rulePanel）
+   统一在这里兜底，以后新写任何 display:xxx 的组件都不用再单独补。
+   ============================================================ */
+[hidden] { display: none !important; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 13.5px;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px 14px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+button { font-family: inherit; cursor: pointer; }
+input  { font-family: inherit; }
+
+.spacer { flex: 1; }
+
+/* ---------------- 通用控件 ---------------- */
+.btn {
+  font-size: 13.5px;
+  font-weight: 500;
+  padding: 9px 17px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: #fff;
+  color: var(--ink);
+  transition: background .15s cubic-bezier(.16,1,.3,1),
+              border-color .15s, transform .15s, box-shadow .15s;
+  box-shadow: 0 1px 2px rgba(18,22,29,.04);
+  white-space: nowrap;
+  flex: none;                /* 底部操作栏同理：按钮不许被压扁 */
+}
+.btn:hover:not(:disabled) {
+  background: #F7F9FC;
+  border-color: #BFC8D6;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px -3px rgba(18,22,29,.12);
+}
+.btn:active:not(:disabled) { transform: translateY(0); }
+.btn:disabled { opacity: .42; cursor: not-allowed; }
+
+.btn.primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 6px 16px -8px rgba(18,22,29,.6);
+}
+.btn.primary:hover:not(:disabled) { background: #262E3C; border-color: #262E3C; }
+.btn.primary.big { font-size: 14.5px; padding: 11px 26px; }
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-2);
+  box-shadow: none;
+}
+.btn.ghost:hover:not(:disabled) {
+  background: #E9EDF4;
+  color: var(--ink);
+  transform: none;
+  box-shadow: none;
+}
+
+.pill {
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 6px 13px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: #F1F4F9;
+  color: var(--ink-2);
+  transition: .15s;
+}
+.pill:hover { background: #E7ECF4; color: var(--ink); }
+/* ⚠️ 防压缩：窗口变窄时 flex 会把这些胶囊按钮压扁，文字只能竖排
+   （「仅选可识别」被挤成三行竖字，看着像坏了）。
+   规则：横向按钮栏里的按钮**永不压缩、文字永不换行**；
+        要压就压搜索框那种弹性项，实在放不下让工具栏横向滚动。 */
+.pill { flex: none; white-space: nowrap; }
+.pill.on { background: var(--ink); color: #fff; }
+.pill.danger { color: var(--red); background: var(--red-bg); }
+.pill.danger:hover { background: #FAD9D9; color: var(--red); }
+
+.seg {
+  display: inline-flex;
+  background: #EEF1F7;
+  border-radius: 10px;
+  padding: 3px;
+  gap: 2px;
+}
+.seg span {
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 7px 14px;
+  border-radius: 8px;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: .15s;
+  white-space: nowrap;
+}
+.seg span:hover { color: var(--ink); }
+.seg span.on {
+  background: #fff;
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(18,22,29,.14);
+}
+
+.inp {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink);
+  background: #F7F9FC;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 9px 13px;
+  outline: none;
+  width: 100%;
+  transition: .15s;
+  user-select: text;
+}
+.inp:hover { border-color: var(--line-2); }
+.inp:focus { border-color: var(--blue); background: #fff; box-shadow: 0 0 0 3px rgba(45,91,255,.12); }
+.inp.mono { font-family: var(--mono); font-size: 13px; letter-spacing: -.01em; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+}
+
+/* ---------------- 顶栏 ---------------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: none;
+  padding: 0 4px;
+}
+.logo {
+  width: 42px; height: 42px;
+  flex: none;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #1B2130, #080B12);
+  color: #fff;
+  display: grid; place-items: center;
+  font-family: var(--disp);
+  font-size: 19px; font-weight: 700;
+  box-shadow: 0 6px 18px -8px rgba(18,22,29,.55),
+              0 1px 0 rgba(255,255,255,.18) inset;
+}
+.brand h1 {
+  font-family: var(--disp);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  line-height: 1.15;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+/* 版本号徽标：用户要一眼知道「这台电脑装的是哪版」。做成等宽小药丸，
+   和标题拉开层次（它是元信息，不该跟标题抢视线），但对比度足够看清。 */
+.brand .ver {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: #EEF1F6;
+  color: var(--ink-2);
+  /* 沿基线对齐时会偏高，单独往下压一点 */
+  position: relative;
+  top: -2px;
+}
+.brand .ver:empty { display: none; }
+/* 作者署名（2026-10-17 加）：跟版本号并排，但要明显更轻 ——
+   它是署名不是信息，不能跟版本号抢注意力。 */
+.brand .author {
+  align-self: center;
+  margin-left: 9px;
+  padding-left: 9px;
+  border-left: 1px solid var(--line-2);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.brand .author:empty { display: none; }
+.brand p {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 720px;
+}
+.brand .path {
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 520px;
+}
+.brand .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--line-2); }
+.topActions { margin-left: auto; display: flex; gap: 9px; align-items: center; }
+.topTg {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  padding-right: 6px;
+}
+.topTg:hover { color: var(--ink); }
+
+/* ---------------- 规则卡 ---------------- */
+.rules {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 15px 20px;
+}
+/* 控件排成一行；规则概要单独占一行放在最下面，
+   否则那句超长的规则说明会把「命名规则」字段整个撑宽，
+   输入框却是固定宽度，右边就空出一大块（之前的布局 bug）。 */
+.rulesRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 26px;
+  min-width: 0;
+}
+.rulesRow > .field { flex: none; }
+
+/* 右侧「时间 / 日期」（v2.7.1 起，v2.7.2 去掉外框）。
+   取代了原来的「当前规则」摘要 —— 那一块和左边「命名规则」按钮信息重复。
+   v2.7.2 业主反馈：加边框像"外挂件"，要去掉边框、字号再大一点、边距舒服些。
+   所以现在**没有底色也没有边框**，只靠字号/字色分层，跟规则卡自然融为一体；
+   与卡片右内边距（20px）对齐，上下由 align-items:center 自动居中。 */
+.ruleClock {
+  flex: none;
+  margin-left: auto;          /* 贴到右侧，左边的控件再长也不会挤走它 */
+  /* 底对齐 = 和左侧「输入框/分段按钮」的底边齐平。
+     用 center 会整体高 11px（左侧上面还有一行 label），实测过。 */
+  align-self: flex-end;
+  margin-bottom: 1px;
+  margin-right: 2px;         /* 不贴卡片右边，留一点呼吸 */
+  display: flex;
+  align-items: center;
+  gap: 22px;                  /* 时间/日期/收起三块之间的呼吸感 */
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+.rcTime {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.rcTime .t {
+  font-family: var(--disp);
+  font-size: 28px; font-weight: 700; line-height: 1;
+  letter-spacing: -.8px;
+  font-variant-numeric: tabular-nums;   /* 数字等宽，分钟跳动时不会左右抖 */
+  color: var(--ink);
+}
+.rcTime .s { font-size: 10px; color: var(--ink-3); letter-spacing: .12em; }
+.rcDate { display: flex; flex-direction: column; gap: 3px; }
+.rcDate .d {
+  font-size: 13.5px; font-weight: 600; color: var(--ink);
+  letter-spacing: -.15px; white-space: nowrap;
+}
+.rcDate .w { font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+
+.field { display: flex; flex-direction: column; gap: 7px; }
+.field > label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .07em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+.hint { font-size: 11px; color: var(--ink-3); }
+.tiny { font-size: 11.5px; color: var(--ink-3); }
+
+.selectWrap { position: relative; display: flex; align-items: stretch; }
+
+/* 命名规则按钮：只显示「自定义」，具体规则看右侧「当前规则」 */
+.tplField { width: 168px; }
+.tplField .selectWrap { width: 100%; }
+.inp.pick {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  padding-right: 12px;
+}
+.inp.pick:hover { border-color: var(--line-2); background: #F2F5FA; }
+.inp.pick .pickLabel {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 下拉箭头用纯 CSS 画的三角形 —— 之前用 ▾ 字符，在部分系统字体下
+   渲染成豆腐块（用户截图里能看到），换成边框三角形最稳 */
+.inp.pick .cv {
+  flex: none;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 4.5px solid var(--ink-3);
+  transition: transform .18s cubic-bezier(.16,1,.3,1);
+}
+.inp.pick.open .cv { transform: rotate(180deg); }
+
+/* =========================================================
+   命名规则面板（勾选 + 拖拽排序）
+   -----------------------------------------------------
+   位置：绝对定位挂在「命名规则」按钮下方。
+   高度：窗口高 880，规则卡在顶部，所以给一个基于视口的上限 + 内部滚动，
+        避免字段多时面板顶出屏幕。
+   ========================================================= */
+.rulePanel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 396px;
+  /* 高度自适应，但不超出视口；内容超出时只滚中间的 .rpBody，
+     头部的 ✕ 与底部的「完成」始终固定 —— 窗口再矮也关得掉 */
+  max-height: calc(100vh - 150px);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 28px 60px -26px rgba(18,22,29,.38),
+              0 2px 6px rgba(18,22,29,.05);
+  padding: 14px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+
+/* 可滚动的中段 */
+.rpBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 3px;
+}
+/* ⚠️ 关键：flex 子项默认 flex-shrink:1，内容超出时会被压扁，
+   而压扁后的内容会**溢出并盖住后面的兄弟元素**（后出现的元素绘制在上层），
+   导致「已选内容」的方块盖住「点击添加或移除」，方块上的 ✕ 也点不到。
+   所以这里禁止直接子项收缩，让 .rpBody 老老实实出滚动条。 */
+.rpBody > * { flex: none; }
+.rpBody::-webkit-scrollbar { width: 9px; }
+.rpBody::-webkit-scrollbar-thumb {
+  background: #D2D9E4; border-radius: 999px; border: 3px solid #fff;
+}
+.rpBody::-webkit-scrollbar-thumb:hover { background: #B9C2D0; }
+
+.rpHead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.rpTitle { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.rpCount { font-size: 11px; color: var(--ink-3); flex: 1 1 auto; }
+.rpClose {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 7px;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
+  transition: background .14s, color .14s;
+}
+.rpClose:hover { background: #EDF0F5; color: var(--ink); }
+
+.rpLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  color: var(--ink-3);
+  margin-top: 3px;
+}
+.rpLabel em {
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: #B6BECC;
+}
+
+/* ---- 字段顺序（顺序控制就在下面的字段列表里）----
+   演进：v2.5.1 顶部独立「已选内容」chip 条 + 拖拽 → v2.5.2 删掉 chip 条、
+   改到列表里用编号 + ‹ › → **v2.5.4 起去掉箭头，直接拖行**（业主要求）。
+   现在：勾上的行浮到最上面、带序号和拖动把手，按住任意一行就能拖。 */
+
+/* 序号徽标：勾上才显示，告诉用户「这个字段排在文件名的第几位」 */
+.rpOrd {
+  flex: none;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 17px;
+  text-align: center;
+  margin-left: auto;              /* 把「序号 + 把手」一起推到行尾 */
+}
+.rpOrd:empty { display: none; }
+
+/* 拖动把手（点阵，跟当年 chip 上的那个同款）——只是个提示，整行都能拖 */
+.rpGrip {
+  width: 8px;
+  height: 14px;
+  flex: none;
+  border-radius: 2px;
+  background-image: radial-gradient(circle, #B9C2D2 1.1px, transparent 1.2px);
+  background-size: 4px 4px;
+  background-position: 0 1px;
+  opacity: 0;
+  transition: opacity .14s;
+}
+.rpOpt.on .rpGrip { opacity: 1; }
+.rpOpt.on { cursor: grab; }
+.rpOpt.on:active { cursor: grabbing; }
+/* 没勾的行不显示把手 —— 它们没有顺序可言，也不给拖 */
+.rpOpt:not(.on) .rpGrip { display: none; }
+
+/* 拖拽中的行：半透明，像是被"拎起来"了 */
+.rpOpt.dragging { opacity: .4; }
+/* 落点提示：一条蓝线。拖到目标行上半 = 插到它前面，下半 = 插到它后面 */
+.rpOpt.dropOn { box-shadow: inset 0 2px 0 var(--blue); }
+.rpOpt.dropOn.dropAfter { box-shadow: inset 0 -2px 0 var(--blue); }
+
+/* ---- 可选字段 ----
+   勾选、看顺序、调顺序都在这一列里完成，所以它自己的滚动区要够高。 */
+.rpPool {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.rpOpt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 7px 9px;
+  background: #fff;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink-2);
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.rpOpt:hover { border-color: var(--line); background: #F7F9FC; }
+.rpOpt.on {
+  border-color: var(--blue);
+  background: var(--blue-bg);
+  color: var(--blue);
+}
+/* 没勾的行不显示排序控件 —— 空着两个灰箭头只会让人以为能点 */
+/* （v2.5.4 起没有排序箭头了，改拖动 —— 这里原来那条「未勾选隐藏箭头」的规则一并删掉） */
+
+.rpTick {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 4px;
+  border: 1.5px solid #CBD3DF;
+  background: #fff;
+  transition: border-color .15s, background .15s;
+}
+.rpOpt.on .rpTick { border-color: var(--blue); background: var(--blue); }
+.rpOpt.on .rpTick::after {
+  content: "";
+  position: absolute;
+  left: 3.5px;
+  top: 0.5px;
+  width: 3px;
+  height: 7px;
+  border: solid #fff;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+.rpOptName { font-weight: 500; }
+
+/* ---- 分隔符 ---- */
+.rpSep { display: flex; flex-wrap: wrap; gap: 5px; }
+.rpSepBtn {
+  min-width: 36px;
+  height: 28px;
+  padding: 0 10px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.rpSepBtn:hover { border-color: var(--line-2); background: #FAFBFD; }
+.rpSepBtn.on {
+  border-color: var(--blue);
+  background: var(--blue-bg);
+  color: var(--blue);
+  font-weight: 600;
+}
+
+/* ---- 效果预览：深色条带，和主按钮同色系，让文件名一眼跳出来 ----
+   字段一多文件名就很长，所以允许折行显示（这是用户核对规则的主要依据，
+   比单行省略有用得多）；再多则内部滚动。
+
+   ⚠️ 2026-10 起这里优先显示「当前选中那张真实发票」的取值：
+      以前只显示内置示例值，明明读不到的字段预览里也好看得很，
+      用户根本发现不了「勾了字段却读不到值」，只能靠事后改名才发现。
+      现在还会在下面补一行「这张票读不到：XX、YY」。 */
+/* =========================================================
+   效果预览条（面板的「结论」）
+   -----------------------------------------------------
+   设计说明（2026-10 重构）：
+     原来是纯黑底 + 浅灰字（background: var(--ink)）。问题有两个：
+       1. 整个界面是浅色纸感风格，黑色是**留给主行动按钮**的（开始重命名），
+          这里再放一块纯黑，等于把「黑 = 值得点」这个信号稀释掉了，
+          而且它孤零零一块，跟周围不像一家人。
+       2. 深色底上为了可读要另配三套浅色小字（#8B95A6 / #6B7484 / #F2C14E），
+          字小对比度还低，反而更难读。
+     现在改成「浅色输出区」：
+       · 极浅的蓝灰底 + 细边框，读作「这里是产出」而不是「这里是代码框」
+       · 左侧 3px 品牌蓝强调条 —— 全站蓝色都表示「当前生效」，
+         而这条正是「按你当前规则算出来的结果」，语义对得上
+       · 文字用墨色（--ink），在浅底上对比度高得多
+       · 标签「效果」独自占一行（见 index.html 注释），把整宽让给文件名
+   ========================================================= */
+.rpPreview {
+  /* 默认不参与收缩：内容多就先挤中间的字段区（那是可滚动的），
+     预览本身尽量完整显示。具体高度由 fitRulePanel() 按可用空间动态分配。 */
+  flex: 0 0 auto;
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 12px 10px 14px;
+  border-radius: 10px;
+  background: #F6F8FD;
+  border: 1px solid #E3E9F5;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* 左侧强调条：一眼看出「这是结果」，比整块黑底克制得多 */
+.rpPreview::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 9px; bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--blue);
+}
+/* 滚动条也跟着换成浅色 —— 原来那条是配深色底的 */
+.rpPreview::-webkit-scrollbar { width: 8px; }
+.rpPreview::-webkit-scrollbar-thumb {
+  background: #CDD6E5; border-radius: 999px; border: 2px solid #F6F8FD;
+}
+.rpPreview::-webkit-scrollbar-thumb:hover { background: #B6C1D4; }
+
+.rpPvHead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rpPvLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: var(--ink-3);
+}
+/* 数据来源标注：当前票实测（蓝）/ 示例（灰）——
+   一眼分清「这是真票的值」还是「占位示例」，避免用户误以为字段生效了 */
+.rpPvSrc {
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #E9EDF5;
+  color: var(--ink-3);
+}
+.rpPvSrc.real {
+  background: var(--blue-bg);
+  color: var(--blue);
+}
+.rpPvVal {
+  flex: none;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink);
+  word-break: break-all;
+}
+/* 这张票读不到的字段：浅底上用加深的琥珀色文字（原来配的是深色底） */
+.rpPvHint {
+  flex: none;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: var(--amber-bg);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--amber-ink);
+  word-break: break-word;
+}
+.rpPvHint:empty { display: none; }
+
+.rpFoot {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 11px;
+  border-top: 1px solid var(--line);
+}
+.btn.tiny { padding: 7px 14px; font-size: 12.5px; border-radius: 9px; }
+
+.toggles { display: flex; gap: 16px; padding-top: 3px; }
+.tg { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.tg input {
+  appearance: none;
+  width: 34px; height: 20px;
+  border-radius: 999px;
+  background: #D9DFE9;
+  position: relative;
+  cursor: pointer;
+  transition: background .18s cubic-bezier(.16,1,.3,1);
+  flex: none;
+}
+.tg input::after {
+  content: "";
+  position: absolute; top: 2px; left: 2px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(18,22,29,.3);
+  transition: transform .18s cubic-bezier(.16,1,.3,1);
+}
+.tg input:checked { background: var(--green); }
+.tg input:checked::after { transform: translateX(14px); }
+
+/* ---------------- 统计条 ---------------- */
+.stats {
+  flex: none;
+  display: flex;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.stat {
+  flex: 1;
+  padding: 12px 18px;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.stat:last-child { border-right: 0; }
+.stat.wide { flex: 1.7; }
+.stat .k {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .07em;
+  color: var(--ink-3); text-transform: uppercase;
+}
+.stat .v {
+  font-family: var(--disp);
+  font-size: 22px; font-weight: 700;
+  letter-spacing: -.035em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.stat .v small { font-size: 12px; font-weight: 500; letter-spacing: 0; margin-left: 3px; color: var(--ink-3); }
+.stat .v.ok { color: var(--green); }
+.stat .v.warn { color: var(--amber); }
+.stat .v.money { font-size: 20px; }
+
+/* ---------------- 主体 ---------------- */
+.body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 372px;
+  gap: 14px;
+  min-height: 0;
+}
+
+.master {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.toolbar .sep { flex: none; width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
+/* 兜底：万一窗口窄到按钮栏放不下，就横向滚动，绝不让按钮变形 */
+.toolbar { overflow-x: auto; scrollbar-width: thin; }
+.toolbar::-webkit-scrollbar { height: 6px; }
+.toolbar::-webkit-scrollbar-thumb { background: #D5DCE8; border-radius: 999px; }
+
+.thead, .row {
+  display: grid;
+  /* 2026-10-17 末尾新增一列「操作」（每行的移除图标）。
+     为了给新列腾地方，把前几列的最小宽度各收一点：
+     最小合计 748px → 702px，比改动前还宽裕，不会因为多一列就把名字挤没。 */
+  grid-template-columns: 44px minmax(138px, 1.1fr) minmax(116px, 1fr)
+                         100px minmax(140px, 1.6fr) minmax(126px, 1.25fr) 34px;
+  align-items: center;
+}
+.thead {
+  flex: none;
+  background: #FAFBFD;
+  border-bottom: 1px solid var(--line);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .07em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+.thead .c, .row > div { padding: 0 12px; min-width: 0; }
+.thead .c { padding-top: 11px; padding-bottom: 11px; }
+.thead .amt { text-align: right; }
+.thead .chk { padding-left: 16px; }
+
+.rows { flex: 1; overflow-y: auto; overflow-x: hidden; }
+.rows::-webkit-scrollbar { width: 10px; }
+.rows::-webkit-scrollbar-thumb { background: #D2D9E4; border-radius: 999px; border: 3px solid #fff; }
+.rows::-webkit-scrollbar-thumb:hover { background: #B9C2D0; }
+
+.row {
+  border-bottom: 1px solid #EEF1F6;
+  min-height: 46px;
+  cursor: pointer;
+  transition: background .12s;
+}
+.row:last-child { border-bottom: 0; }
+.row:hover { background: #FAFBFE; }
+.row.sel { background: var(--blue-bg); }
+/* 票号重复的行：样式统一挪到文件末尾的「按组区分」块里了 ——
+   那边要盖过 .row.chkRow 的底色，必须写在它后面。 */
+.row:not(.checked) .buyer,
+.row:not(.checked) .fname { opacity: .55; }
+
+.ck {
+  width: 18px; height: 18px;
+  border-radius: 5px;
+  border: 1.5px solid var(--line-2);
+  background: #fff;
+  display: grid; place-items: center;
+  font-size: 11px; font-weight: 700; color: #fff;
+  transition: .15s;
+  cursor: pointer;
+  flex: none;
+}
+.ck:hover { border-color: var(--blue); }
+.ck.on { background: var(--blue); border-color: var(--blue); }
+.ck.on::after { content: "✓"; }
+
+.fname {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;                     /* flex 子项要能压缩，ellipsis 才生效 */
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-3);
+  letter-spacing: -.02em;
+}
+.fnameT {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 格式标签：PDF / OFD / XML 一眼可分。
+   同一张发票常常三种格式都在（客户把 PDF+OFD 一起发来是常事），
+   不标出来就分不清哪一行是哪一份。 */
+.fmt {
+  flex: none;
+  font-family: var(--sans);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: #EEF1F6;
+  color: var(--ink-2);
+}
+.fmt:empty { display: none; }
+.fmt.f-ofd { background: #EAF0FF; color: #2B4FD8; }
+.fmt.f-xml { background: #FDF1DE; color: #95590A; }
+.buyer {
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.buyer.dim { color: var(--ink-3); font-weight: 400; font-style: italic; }
+.amt {
+  font-family: var(--disp);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em;
+}
+.amt.neg { color: var(--red); }
+.newn {
+  font-family: var(--disp);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -.015em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.newn .ext { color: var(--ink-3); font-weight: 400; }
+.newn.dim { color: var(--ink-3); font-weight: 500; }
+
+.tag {
+  display: inline-flex;
+  /* 圆点跟着**第一行**走：两行状态下如果居中会飘到中间，看着像另一段东西 */
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  /* ⚠️ 这里**不能**用 white-space: nowrap + 省略号（2026-10-16 用户报的「状态显示不全」）。
+     状态列只有 126px 宽，而「未识别到：购买方名称、价税合计」要 190px 才放得下，
+     截断后用户看不到到底缺哪个字段 —— 而那正是他要的信息。
+     改成折行：短状态（就绪 / 待核对）照旧一行，长的自动折成两行。
+     完整原因仍然挂在 title 上（见 app.js 的 renderRow），悬停可看。 */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+  text-align: left;
+  max-width: 100%;
+}
+/* margin-top 让圆点和第一行文字的中线对齐 —— 单行时的观感和以前完全一致 */
+.tag::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: none; margin-top: 5px; }
+.tag.ok   { background: var(--green-bg); color: var(--green); }
+.tag.dup  { background: var(--amber-bg); color: var(--amber); }
+.tag.bad  { background: var(--red-bg);   color: var(--red); }
+
+/* 空状态 */
+.empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px 20px;
+  text-align: center;
+}
+.empty .art {
+  width: 60px; height: 60px;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #1B2130, #080B12);
+  color: #fff;
+  display: grid; place-items: center;
+  font-size: 26px; font-weight: 700;
+  font-family: var(--disp);
+  margin-bottom: 6px;
+}
+.empty h2 { font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
+.empty p { font-size: 13px; color: var(--ink-2); line-height: 1.75; }
+.empty b { color: var(--ink); font-weight: 600; }
+.empty .fine { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+
+/* ---------------- 详情面板 ---------------- */
+.detail {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.dhead {
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--line);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .07em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+.dhead .idx { color: var(--blue); font-family: var(--mono); letter-spacing: 0; }
+.dbody { flex: 1; overflow-y: auto; padding: 13px 15px; display: flex; flex-direction: column; gap: 11px; }
+.dbody::-webkit-scrollbar { width: 10px; }
+.dbody::-webkit-scrollbar-thumb { background: #D2D9E4; border-radius: 999px; border: 3px solid #fff; }
+
+.dempty {
+  margin: auto;
+  text-align: center;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 1.9;
+}
+
+.kv { display: flex; flex-direction: column; gap: 4px; }
+.kv .k {
+  font-size: 10px; font-weight: 600; letter-spacing: .08em;
+  color: var(--ink-3); text-transform: uppercase;
+}
+.kv .v { font-size: 13.5px; word-break: break-all; user-select: text; }
+.kv .v.big {
+  font-family: var(--disp);
+  font-size: 21px; font-weight: 700;
+  letter-spacing: -.035em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.kv .v.mono { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+.kv .v .sep { color: #C4CBD6; margin: 0 5px; }
+.kv .v.dimText { color: var(--ink-3); }
+
+.rename {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #FAFBFD;
+  overflow: hidden;
+}
+.rename .ln {
+  padding: 8px 11px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  word-break: break-all;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--line);
+}
+.rename .ln .lb {
+  display: block;
+  font-family: var(--sans);
+  font-size: 9.5px; font-weight: 600; letter-spacing: .1em;
+  color: var(--ink-3); margin-bottom: 5px; text-transform: uppercase;
+}
+.rename .ln.out {
+  border-bottom: 0;
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--disp);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: -.015em;
+}
+
+.dacts {
+  flex: none;
+  display: flex;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+}
+.dacts .btn { flex: 1; padding: 9px 10px; font-size: 12.5px; }
+.dacts .btn.accent { border-color: #F0D6A8; color: var(--amber); background: var(--amber-bg); }
+.dacts .btn.accent:hover:not(:disabled) { background: #FBEBCF; border-color: #E4C78D; }
+
+/* ---------------- 底部 ---------------- */
+.foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 18px;
+  background: rgba(255,255,255,.86);
+  backdrop-filter: blur(14px) saturate(180%);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: 0 16px 36px -22px rgba(18,22,29,.35);
+}
+.sum { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.sum b { font-family: var(--disp); font-weight: 700; color: var(--ink); }
+.progWrap { width: 130px; }
+.prog { height: 6px; border-radius: 999px; background: #E5E9F0; overflow: hidden; }
+.prog i { display: block; height: 100%; width: 0%; border-radius: 999px;
+          background: linear-gradient(90deg, #0E9F6E, #37C08A);
+          transition: width .2s cubic-bezier(.16,1,.3,1); }
+.progTxt { font-size: 12px; color: var(--ink-3); }
+
+/* ---------------- 弹窗 ---------------- */
+.modal {
+  position: fixed; inset: 0;
+  background: rgba(18,22,29,.42);
+  backdrop-filter: blur(3px);
+  display: grid; place-items: center;
+  z-index: 100;
+  animation: fadeIn .16s cubic-bezier(.16,1,.3,1);
+}
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+
+.sheet {
+  width: 620px; max-width: calc(100vw - 60px);
+  max-height: calc(100vh - 80px);
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 40px 80px -30px rgba(18,22,29,.5);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  animation: popIn .2s cubic-bezier(.16,1,.3,1);
+}
+.sheet.narrow { width: 440px; }
+@keyframes popIn { from { opacity: 0; transform: translateY(10px) scale(.985) } to { opacity: 1; transform: none } }
+
+.sheetHead {
+  flex: none;
+  display: flex; align-items: center;
+  padding: 17px 22px;
+  border-bottom: 1px solid var(--line);
+}
+.sheetHead h3 { font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
+.sheetHead .x {
+  margin-left: auto;
+  border: 0; background: transparent;
+  color: var(--ink-3); font-size: 14px;
+  width: 28px; height: 28px; border-radius: 8px;
+}
+.sheetHead .x:hover { background: #F1F4F9; color: var(--ink); }
+
+.sheetBody { flex: 1; overflow-y: auto; padding: 20px 22px; display: flex; flex-direction: column; gap: 16px; }
+.sheetBody .field > label {
+  font-size: 11px; font-weight: 600; letter-spacing: .06em;
+  color: var(--ink-2); text-transform: none;
+}
+.sheetFoot {
+  flex: none;
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--line);
+  background: #FAFBFD;
+}
+
+/* ---- 确认弹窗（替代原生 confirm）----
+   454px：确认框的任务是「一眼看清后果、然后做决定」，
+   再宽会让人以为里面还有很多内容要读，反而犹豫。 */
+.sheet.confirm { width: 454px; }
+.cfBody { gap: 13px; }
+
+/* 后果说明：行高放到 1.75，中文长句才不挤成一坨 */
+.cfText { font-size: 14px; line-height: 1.75; color: var(--ink); }
+.cfText b { font-weight: 700; }
+
+/* 安心提示：「文件不会被删」是用户此刻最担心的事，
+   所以给淡底 + 左侧色条让它自己跳出来 ——
+   原来它缩在全角括号里，等于没说。 */
+.cfNote {
+  position: relative;
+  padding: 11px 14px 11px 17px;
+  border-radius: 10px;
+  background: var(--green-bg);
+  color: #0B6B4A;
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+.cfNote::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 9px; bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--green);
+}
+
+/* 破坏性操作的确认按钮：与主按钮同尺寸、只换颜色，
+   这样「该按哪儿」在两个弹窗里是同一套肌肉记忆 */
+.btn.danger {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 6px 16px -8px rgba(217,58,63,.65);
+}
+.btn.danger:hover:not(:disabled) { background: #C22D32; border-color: #C22D32; }
+
+/* 按钮里的小图标（合并 PDF 用） */
+.btn .ico {
+  width: 13px;
+  height: 13px;
+  margin-right: 6px;
+  vertical-align: -1.5px;
+}
+
+/* =========================================================
+   列表搜索框（工具栏右半区）
+   -----------------------------------------------------
+   高度对齐旁边的 pill（32px），否则工具栏会参差不齐。
+   搜索是「找某一张票」的动作，和左边的「全选/仅选可识别」不是一类，
+   所以用 spacer 推到右侧，视觉上自成一组。
+   ========================================================= */
+.searchWrap {
+  position: relative;
+  flex: 0 1 250px;
+  min-width: 104px;          /* 窗口窄时先压它，不压按钮 */
+  display: flex;
+  align-items: center;
+}
+.searchIco {
+  position: absolute;
+  left: 10px;
+  width: 14px;
+  height: 14px;
+  color: var(--ink-3);
+  pointer-events: none;
+}
+.searchInp {
+  width: 100%;
+  height: 32px;
+  padding: 0 30px 0 31px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--ink);
+  transition: border-color .15s, box-shadow .15s;
+}
+.searchInp::placeholder { color: var(--ink-3); }
+.searchInp:hover { border-color: var(--line-2); }
+.searchInp:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(45,91,255,.12);
+}
+/* 有内容时才出现的清空按钮 —— 搜索框里打了一半想重来是常事 */
+.searchX {
+  position: absolute;
+  right: 6px;
+  width: 20px; height: 20px;
+  border: 0;
+  border-radius: 999px;
+  background: #E9EDF4;
+  color: var(--ink-2);
+  font-size: 11px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.searchX:hover { background: #DDE3EC; color: var(--ink); }
+/* 搜索生效时给输入框一圈淡蓝，提示「现在列表是被筛过的」 */
+.searchWrap.on .searchInp { border-color: #B9C8F5; background: var(--blue-bg); }
+
+/* 列表为空但「不是没有票，而是没搜到」时的提示 */
+.noMatch {
+  padding: 34px 20px;
+  text-align: center;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.noMatch b { color: var(--ink); }
+
+/* =========================================================
+   合并 PDF 弹窗
+   结构：说明 → 待合并清单（可调顺序）→ 跳过提示 → 文件名 →
+        保存位置 → 书签开关。
+   清单顺序就是合并顺序，所以上下箭头是这块的主要操作。
+   ========================================================= */
+.mgIntro {
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--ink-2);
+  margin-top: -4px;
+}
+
+.mgList {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow-y: auto;
+  max-height: 214px;          /* 约 5 行，再多就内部滚动 */
+  background: #fff;
+}
+.mgRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border-bottom: 1px solid #EEF1F6;
+  font-size: 12.5px;
+}
+.mgRow:last-child { border-bottom: 0; }
+.mgRow.skip { background: #FAFBFD; }
+
+.mgNo {
+  flex: none;
+  width: 20px; height: 20px;
+  border-radius: 6px;
+  background: var(--blue-bg);
+  color: var(--blue);
+  font-size: 11px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  display: flex; align-items: center; justify-content: center;
+}
+.mgRow.skip .mgNo { background: #EEF1F6; color: var(--ink-3); }
+
+/* 文件名要能核对，所以用等宽；超长省略，靠 title 悬停看全 */
+.mgName {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mgRow.skip .mgName { color: var(--ink-3); }
+
+.mgPg {
+  flex: none;
+  font-size: 11px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.mgActs { flex: none; display: flex; gap: 2px; }
+.mgActs i {
+  font-style: normal;
+  width: 21px; height: 21px;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ink-3);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.mgActs i:hover { background: #EEF1F6; color: var(--ink); }
+/* 首行的「上移」和末行的「下移」置灰，省得用户白点 */
+.mgActs i.off { opacity: .28; cursor: default; }
+.mgActs i.off:hover { background: transparent; color: var(--ink-3); }
+
+.mgSkipTag {
+  flex: none;
+  font-size: 10px; font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--amber-bg);
+  color: var(--amber-ink);
+}
+
+/* 非 PDF 的跳过说明 —— 沿用确认弹窗那套「淡底 + 左侧色条」的语言 */
+.mgNote {
+  position: relative;
+  padding: 9px 12px 9px 14px;
+  border-radius: 9px;
+  background: var(--amber-bg);
+  color: var(--amber-ink);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+.mgNote::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 8px; bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--amber);
+}
+
+.mgDir { display: flex; gap: 8px; }
+.mgDir .inp { flex: 1 1 auto; min-width: 0; }
+.mgSum { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.mgBookmark { align-items: flex-start; }
+.mgBookmark span { white-space: normal; line-height: 1.5; }
+
+/* ---- 拖拽导入提示层 ----
+   pointer-events:none 是必须的：它只是视觉反馈，
+   drop 事件要能穿过去落到 body（Python 侧的监听器在那儿）。
+   z-index 高于弹窗（100），因为拖拽时它是唯一该被看见的东西。 */
+.dropHint {
+  position: fixed; inset: 0;
+  z-index: 200;
+  display: grid; place-items: center;
+  background: rgba(45,91,255,.08);
+  pointer-events: none;
+  animation: fadeIn .12s cubic-bezier(.16,1,.3,1);
+}
+.dhCard {
+  padding: 24px 38px;
+  border-radius: 18px;
+  background: #fff;
+  border: 2px dashed var(--blue);
+  box-shadow: 0 26px 64px -26px rgba(45,91,255,.55);
+  text-align: center;
+}
+.dhTitle {
+  font-size: 17px; font-weight: 700;
+  color: var(--blue); letter-spacing: -.01em;
+}
+.dhText { margin-top: 8px; font-size: 12.5px; color: var(--ink-2); }
+
+.planList {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 12.5px;
+}
+.planList .li {
+  display: grid;
+  grid-template-columns: 1fr 20px 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 12px;
+  border-bottom: 1px solid #EEF1F6;
+}
+.planList .li:last-child { border-bottom: 0; }
+.planList .from { font-family: var(--mono); font-size: 11px; color: var(--ink-3);
+                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planList .to { font-weight: 600; font-size: 12.5px;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planList .ar { text-align: center; color: var(--ink-3); }
+
+.factGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.fact {
+  background: #F7F9FC;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 11px 13px;
+}
+.fact .k { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; color: var(--ink-3); text-transform: uppercase; }
+.fact .v { font-family: var(--disp); font-size: 17px; font-weight: 700; letter-spacing: -.03em; margin-top: 3px; }
+.fact .v.warn { color: var(--amber); }
+.fact .v.ok { color: var(--green); }
+
+/* =========================================================
+   结果提示条（完成弹窗 / 详情面板里的告警块）
+   -----------------------------------------------------
+   ⚠️ 原来这里是 `display:flex; gap:9px` —— flex 是**横向**排布的，
+      导致内部的文字、<br>、路径 <span> 被当成一个个 flex item **并排挤成一行**：
+      路径和「大小 319.5 KB」被甩到右侧，完全没法读。
+      而且 ::before 恒为 ⚠，于是「✔ 已生成」前面挂着个感叹号，自相矛盾。
+   现在：改成块级流式布局（<br> 和块元素都正常换行），
+        图标用绝对定位挂在左侧（不用包一层 DOM，所有既有用法一次性修好）。
+   ========================================================= */
+.warnLine {
+  position: relative;
+  display: block;                 /* ← 关键：不能用 flex，见上面注释 */
+  background: var(--amber-bg);
+  border: 1px solid #F0D6A8;
+  color: var(--amber-ink);
+  border-radius: 10px;
+  padding: 11px 14px 11px 34px;   /* 左侧给图标留位 */
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.warnLine::before {
+  content: "⚠";
+  position: absolute;
+  left: 13px;
+  top: 11px;
+  line-height: 1.7;
+}
+/* 绿色变体：成功/安心类信息（备份位置、生成的文件）用 ✔ 而不是 ⚠ */
+.warnLine.ok {
+  background: var(--green-bg);
+  border-color: #B7E2D0;
+  color: #0A6B4A;
+}
+.warnLine.ok::before { content: "✔"; }
+
+/* 路径块：完成提示里最要紧的就是「文件在哪」。
+   等宽 + 浅底 + 可选中 + 允许断行，方便用户直接复制去资源管理器粘贴。 */
+.lnk {
+  margin-top: 7px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .72);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  word-break: break-all;
+  user-select: text;
+  cursor: text;
+}
+/* 路径下面的次要信息（大小、页数之类），压低存在感 */
+.lnkMeta {
+  margin-top: 6px;
+  font-size: 11.5px;
+  opacity: .82;
+}
+
+.fillFile {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  background: #F7F9FC;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 10px 12px;
+  word-break: break-all;
+  user-select: text;
+}
+
+/* ---------------- Toast ---------------- */
+.toast {
+  position: fixed;
+  left: 50%; bottom: 84px;
+  transform: translateX(-50%) translateY(12px);
+  background: var(--ink);
+  color: #fff;
+  font-size: 13px;
+  padding: 11px 20px;
+  border-radius: 10px;
+  box-shadow: 0 16px 40px -14px rgba(18,22,29,.6);
+  opacity: 0;
+  transition: opacity .2s, transform .2s cubic-bezier(.16,1,.3,1);
+  z-index: 200;
+  pointer-events: none;
+  max-width: 70vw;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.err { background: var(--red); }
+
+/* ---------------- 忙碌遮罩 ---------------- */
+body.busy { cursor: progress; }
+
+@media (max-width: 1180px) {
+  .body { grid-template-columns: minmax(0, 1fr) 320px; }
+  .stat.wide { flex: 1.3; }
+}
+
+/* =========================================================
+   v2.5 新增：凭证配对 / 批量操作 / 右栏汇总
+   ========================================================= */
+
+/* ---------- 底部栏的「导出台账」下拉 ---------- */
+.menuWrap { position: relative; display: inline-flex; }
+.popMenu {
+  position: absolute;
+  bottom: calc(100% + 7px);          /* 按钮在底部，菜单往上弹 */
+  left: 0;
+  min-width: 244px;
+  z-index: 70;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 5px;
+  box-shadow: 0 18px 38px -20px rgba(18,22,29,.42);
+}
+.popMenu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  border-radius: 7px;
+  cursor: pointer;
+  font: inherit;
+}
+.popMenu button:hover { background: #F3F6FB; }
+.popMenu b {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.popMenu em {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-top: 2px;
+  line-height: 1.45;
+}
+
+/* ---------- 行程单：作为附件折叠在发票下面 ----------
+   发票是主凭证、行程单是附件，界面上必须体现这个从属关系 ——
+   让它和发票并列占一整行，用户会以为它们是两件不相干的事。 */
+.attachRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 12px 8px 50px;        /* 左缩进 = 视觉上的从属 */
+  background: #FAFBFD;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.attachRow .aIcon { flex: none; color: var(--ink-3); display: flex; }
+.attachRow .aName { flex: none; font-weight: 600; }
+.attachRow .aMeta {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.attachRow .aTag {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--green-bg);
+  color: #0A6B4A;
+}
+.attachRow.wait .aTag { background: var(--amber-bg); color: var(--amber-ink); }
+.attachRow.wait { background: #FFFDF6; }
+
+/* 待配对的行程单自己也占一行（没有发票可挂），用淡黄提示「需要留意」而非红色报错 */
+.row.tripRow { background: #FFFDF6; }
+.row.tripRow .buyer { color: var(--ink-2); }
+
+/* 凭证类型小标（PDF/OFD 徽标旁边那个） */
+.kindTag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #EEF1F6;
+  color: var(--ink-2);
+  margin-right: 5px;
+}
+.kindTag.trip { background: var(--blue-bg); color: var(--blue); }
+
+/* 校验异常的行：淡黄底 + 左侧色条，一眼看得出「这行要核一下」 */
+.row.chkRow { background: #FFFCF4; }
+.row.chkRow td:first-child,
+.row.chkRow > div:first-child { position: relative; }
+.row.chkRow::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--amber);
+}
+
+/* ---------- 右栏：没选中行时显示「本批汇总」 ---------- */
+.sumBox {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 2px;
+}
+.sumHead {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  line-height: 1.6;
+}
+.sumCards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.sumCard {
+  background: #F7F9FC;
+  border-radius: 9px;
+  padding: 9px 11px;
+}
+.sumCard .k { font-size: 11px; color: var(--ink-3); }
+.sumCard .v {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+.sumCard .v small { font-size: 11px; font-weight: 400; color: var(--ink-3); }
+.sumCard .v.ok { color: var(--green); }
+.sumCard .v.warn { color: var(--amber); }
+.sumSec > .t {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  color: var(--ink-3);
+  margin-bottom: 7px;
+}
+.sumList { display: flex; flex-direction: column; gap: 5px; }
+.sumItem {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+.sumItem .n {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sumItem .a {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+.sumItem .c { flex: none; color: var(--ink-3); font-size: 11px; width: 34px; text-align: right; }
+.sumBar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--blue);
+  opacity: .55;
+  margin-top: 3px;
+}
+.sumEmpty { font-size: 12px; color: var(--ink-3); }
+
+/* ---------- 批量改名的效果预览 ---------- */
+.btPreview {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.75;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: #F6F8FD;
+  border: 1px solid #E3E9F5;
+  color: var(--ink);
+  word-break: break-all;
+  max-height: 118px;
+  overflow-y: auto;
+}
+.btPreview .old { color: var(--ink-3); }
+.btPreview .arrow { color: var(--ink-3); margin: 0 5px; }
+.btPreview .new { color: var(--blue); font-weight: 600; }
+.sumCard.wide { grid-column: span 2; }
+
+/* ---------- 行末「移除这一行」图标（2026-10-17） ----------
+   业主反馈：为了删几行，得先勾选、再去工具栏点「移除勾选」，太绕。
+   改成每行末尾一个垃圾桶，点一下就少一行；工具栏那个批量按钮已撤掉。
+   ⚠️ 仍然只从**列表**里移除，磁盘文件一个都不动（悬停提示里写清楚）。 */
+.row > div.act, .thead .c.act { padding: 0 4px; }
+.act { display: flex; align-items: center; justify-content: center; }
+.rowDel {
+  width: 24px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; border: 0; border-radius: 6px;
+  background: transparent;
+  color: #C7CEDA;
+  cursor: pointer;
+  transition: background .14s, color .14s;
+}
+.rowDel svg { width: 14px; height: 14px; display: block; }
+.rowDel:hover { background: var(--red-bg); color: var(--red); }
+.rowDel:active { transform: scale(.93); }
+
+/* ---------- 票号重复：按「组」区分 ----------
+   同一票号常常有好几份（客户重复下载、或者 PDF / OFD / XML 各来一份）。
+   原来一律标「票号重复」，一屏十几行里根本看不出哪几张是一伙的，
+   想删掉多余的那份还得一个个点开比对（业主要的就是这个）。
+   现在：每一组一个颜色 + 一个编号 ——
+     · 行底色按组淡染；
+     · 状态标签下面挂一枚「组2 第1/3份」小标。
+   同色同号即同组，扫一眼就能对上，删的时候不会删错、也不会漏删。
+
+   ⚠️ 这几条必须排在 .row.chkRow 之后（本文件末尾），
+      否则「校验异常」那条 #FFFCF4 会把组色盖掉。 */
+/* ---------- 票号重复：一组一色 ----------
+   四版演进（别再反复了）：
+     v2.5.4 每组一色(6色) + 「组N 第x份」彩色小标 → 太花
+     v2.5.5 全部统一琥珀                          → 分不出组
+     v2.5.6 两色交替                              → 第1组和第3组撞色
+     **v2.5.7 一组一色、色相按黄金角递推**         ← 现在这版
+   颜色由 app.js 按组号算好后用内联 --dup 传进来（`hsl(h, 68%, 91%)`），
+   这里只负责"有就上色、没有就兜底"。
+   就绪的行不会带这个类，所以维持默认白底。
+   ⚠️ 必须排在 .row.chkRow 之后（本文件靠后），否则「校验异常」的 #FFFCF4 会盖掉。 */
+.row.dupRow { background: var(--dup, var(--amber-bg)); }
+.row.dupRow.sel { background: #FBEBCF; }               /* 选中态压过组色 */
+
+/* 状态单元格：药丸 + （可选）组标。
+   v2.5.5 起不再有组标，这里保留 column 布局是为了以后还能加第二行。 */
+.stCell { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+
+/* ---------- 右栏：重复票号清单 ----------
+   「只看重复票号」只能把重复的都筛出来，但看不出分组。
+   这里按票号列一份清单（共几份 + 每份的文件名），
+   点文件名直接跳到左边那一行 —— 删之前能先看清谁是谁。
+   v2.5.7：每块底色跟列表里那几行**同一个 --dup**，方便对上号。 */
+.dupList { display: flex; flex-direction: column; gap: 7px; }
+.dupGrp {
+  padding: 7px 9px 5px;
+  border-radius: 9px;
+  background: var(--dup, #FAFBFD);
+  border: 1px solid var(--line);
+}
+.dupHead { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.dupNo {
+  font-size: 10px; font-weight: 600;
+  padding: 2px 7px; border-radius: 999px;
+  background: var(--amber-bg); color: #95590A;
+}
+.dupCnt { font-size: 10.5px; color: var(--ink-3); }
+.dupFile {
+  display: block; width: 100%; max-width: 100%;
+  padding: 2px 0; border: 0; background: transparent;
+  font-family: inherit; font-size: 11.5px; color: var(--ink-2);
+  text-align: left;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  cursor: pointer;
+}
+.dupFile:hover { color: var(--blue); text-decoration: underline; }
+
+/* ================= v2.6 新增界面 ================= */
+
+/* 弹窗加宽：重复票取舍台要并排摆 2~4 张卡片 */
+.sheet.wide { width: 780px; }
+
+/* ---- 右栏：票面预览 + 字段定位 ---- */
+.pvBox { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.pvHead { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--ink-3); }
+.pvHead .pvName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pvNav { display: flex; align-items: center; gap: 4px; }
+.pvBtn {
+  width: 20px; height: 20px; padding: 0; border: 0; border-radius: 6px;
+  background: #F1F4F9; color: var(--ink-2); font-size: 12px; line-height: 1;
+  cursor: pointer;
+}
+.pvBtn:hover:not(:disabled) { background: var(--blue-bg); color: var(--blue); }
+.pvBtn:disabled { opacity: .3; cursor: default; }
+.pvCanvas {
+  position: relative; border: 1px solid var(--line); border-radius: 8px;
+  overflow: hidden; background: #fff; line-height: 0;
+}
+.pvCanvas img { display: block; width: 100%; height: auto; }
+/* 三个高亮框：购买方(蓝) / 价税合计(绿) / 票号(琥珀) —— 颜色跟字段语义对应 */
+.pvHit { position: absolute; border: 1.5px solid var(--blue); background: rgba(45,91,255,.10); border-radius: 3px; pointer-events: none; }
+.pvHit.h-amount { border-color: #0E9F6E; background: rgba(14,159,110,.12); }
+.pvHit.h-no { border-color: #B5760A; background: rgba(181,118,10,.10); }
+.pvLegend { display: flex; gap: 10px; flex-wrap: wrap; font-size: 10px; color: var(--ink-3); }
+.pvLegend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; border: 1.5px solid var(--blue); margin-right: 3px; vertical-align: -1px; }
+.pvLegend i.g { border-color: #0E9F6E; }
+.pvLegend i.a { border-color: #B5760A; }
+.pvEmpty { font-size: 11.5px; line-height: 1.75; color: var(--ink-3); padding: 8px 0; }
+.pvSpin { font-size: 11px; color: var(--ink-3); padding: 14px 0; text-align: center; }
+
+/* ---- 重复票取舍台 ---- */
+.dupSub { font-size: 12px; color: var(--ink-2); line-height: 1.7; }
+.dupCards { display: flex; gap: 12px; align-items: stretch; }
+.dupCard {
+  flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px; cursor: pointer; background: #fff;
+  transition: border-color .14s, box-shadow .14s;
+}
+.dupCard:hover { border-color: var(--line-2); }
+.dupCard.on { border: 2px solid var(--blue); box-shadow: 0 0 0 3px rgba(45,91,255,.08); padding: 9px; }
+.dupCard .dcTop { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; min-height: 18px; }
+.dupCard .dcSug {
+  font-size: 10px; padding: 2px 6px; border-radius: 4px;
+  background: var(--blue-bg); color: #2B4FD8;
+}
+.dupCard .dcThumb {
+  height: 92px; border: 1px solid var(--line); border-radius: 6px;
+  overflow: hidden; background: #FBFCFE; margin-bottom: 8px;
+  display: flex; align-items: flex-start; justify-content: center;
+}
+.dupCard .dcThumb img { width: 100%; height: auto; display: block; }
+.dupCard .dcThumb .dcNo {
+  font-size: 10.5px; color: var(--ink-3); padding-top: 34px; text-align: center;
+  line-height: 1.6;
+}
+.dupCard .dcName {
+  font-size: 11px; color: var(--ink); margin-bottom: 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dupCard .dcMeta { font-size: 10.5px; color: var(--ink-3); margin-bottom: 2px; }
+.dupCard .dcPick {
+  margin-top: 8px; text-align: center; font-size: 11px;
+  padding: 5px; border-radius: 6px; border: 1px solid var(--line-2); color: var(--ink-2);
+}
+.dupCard.on .dcPick { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+/* ---- 操作历史 ---- */
+.hisList { display: flex; flex-direction: column; gap: 8px; }
+.hisRow {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px;
+}
+.hisRow .ht { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); min-width: 118px; }
+.hisRow .hl { flex: 1; min-width: 0; font-size: 12px; color: var(--ink); }
+.hisRow .hn { font-size: 11px; color: var(--ink-3); }
+.hisRow .btn { flex: none; }
+.hisRow.done { background: #FAFBFC; color: var(--ink-3); }
+
+/* ---- 多票拆分 ---- */
+.splitList { display: flex; flex-direction: column; gap: 8px; }
+.splitRow {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px;
+}
+.splitRow .sp { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); min-width: 78px; }
+.splitRow .sn { flex: 1; min-width: 0; font-size: 11.5px; color: var(--ink);
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.splitRow .sa { font-size: 11.5px; color: var(--ink); }
+
+/* ---- 命名模板库 ---- */
+.rpTpl { display: flex; gap: 8px; align-items: center; }
+.rpTpl .inp { flex: 1; min-width: 0; height: 30px; }
+.rpTplSel { flex: 1; min-width: 0; height: 30px; }
+.rpTpl .btn { flex: none; height: 30px; padding: 0 12px; font-size: 12px; }
+
+/* 状态列里的小按钮（拆开多票 PDF / 输入密码）—— 比药丸小一号，不抢戏 */
+.rowAct {
+  margin-top: 3px;
+  padding: 1px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 16px;
+  cursor: pointer;
+  transition: background .14s, color .14s, border-color .14s;
+}
+.rowAct:hover { background: var(--blue-bg); color: var(--blue); border-color: #C6D3FF; }
+
+/* 右栏重复清单里的「取舍…」按钮 */
+.dupPick {
+  margin-left: auto;
+  padding: 1px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 16px;
+  cursor: pointer;
+}
+.dupPick:hover { background: var(--blue-bg); color: var(--blue); border-color: #C6D3FF; }
+
+/* 「票号重复 ×N」这枚药丸可以点（打开取舍台），给个手型提示 */
+.tag[data-dup] { cursor: pointer; }
+.tag[data-dup]:hover { filter: brightness(.97); box-shadow: 0 0 0 2px rgba(45,91,255,.10); }
+
+/* ---- 命名模板库（弹窗） ---- */
+.tplList { display: flex; flex-direction: column; gap: 8px; }
+.tplRow {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px;
+}
+.tplRow .tn { flex: 1; min-width: 0; font-size: 12.5px; color: var(--ink);
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tplRow .td { font-size: 11px; color: var(--ink-3); min-width: 0;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+.tplRow.cur { border-color: #C6D3FF; background: #F7F9FF; }
+.tplSaveRow { display: flex; gap: 8px; align-items: center; }
+.tplSaveRow .inp { flex: 1; min-width: 0; }
+.tplSaveRow .btn { flex: none; }
+
+/* ---- 票面大图（v2.6.1）----
+   列表右栏只有 280px 宽，数电票又是横版，小图根本看不清。
+   点预览打开全屏大图：可缩放、可拖动、可翻页，字段框跟着一起放大。 */
+.pvLight {
+  width: min(1180px, 94vw);
+  height: min(90vh, 920px);
+  background: #fff;
+  border-radius: 14px;
+  display: flex; flex-direction: column; overflow: hidden;
+  animation: popIn .2s cubic-bezier(.16,1,.3,1);
+}
+.pvLightHead {
+  flex: none; display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px; border-bottom: 1px solid var(--line);
+}
+.pvLightName {
+  flex: 1; min-width: 0; font-size: 12.5px; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pvLightNav, .pvLightZoom { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ink-2); }
+.pvBtn.pvWide { width: auto; padding: 0 9px; }
+.pvLightX {
+  margin-left: 4px; border: 0; background: transparent; color: var(--ink-3);
+  font-size: 14px; width: 28px; height: 28px; border-radius: 8px; cursor: pointer;
+}
+.pvLightX:hover { background: #F1F4F9; color: var(--ink); }
+.pvViewport {
+  flex: 1; overflow: hidden; background: #E9EDF3;
+  /* ⚠️ 这里不能再用 flex 居中：JS 的 translate 是以「票面贴在左上角」为前提算的，
+     flex 再把票面元素居中一次 = 双重居中，票面就漂到左上、下方留一大片空（v2.6.1 业主截图实锤）。 */
+  position: relative; cursor: grab;
+}
+.pvViewport.dragging { cursor: grabbing; }
+.pvStage { position: absolute; left: 0; top: 0; transform-origin: 0 0; line-height: 0; will-change: transform; }
+.pvStage img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
+.pvLightFoot {
+  flex: none; font-size: 11px; color: var(--ink-3);
+  padding: 8px 14px; border-top: 1px solid var(--line); text-align: center;
+}
+/* 列表里的小预览给个「可以点大」的暗示 */
+.pvCanvas.zoomable { cursor: zoom-in; }
+.pvCanvas.zoomable:hover { border-color: #C6D3FF; }
+
+/* ============================================================
+   v2.7：把纵向空间还给列表
+   ------------------------------------------------------------
+   改了三处（业主 2026-10-18 反馈「一屏只能看 9 行」）：
+     1. 规则卡可折叠 —— 收起时 38px，展开时跟原来一样
+     2. 统计条从 76px 的六宫格压成一行 chips
+     3. 工具栏加状态筛选 + 排序（不改高度，只是横向排布更密）
+   ============================================================ */
+
+/* ---------------- 规则卡：折叠态 ---------------- */
+.ruleFolded { display: none; }
+.rules.folded { padding: 0; }
+.rules.folded .rulesRow { display: none; }
+.rules.folded .ruleFolded {
+  display: flex; align-items: center; gap: 8px;
+  padding: 2px 14px; cursor: pointer; border-radius: var(--r);
+  font-size: 12px; color: var(--ink-2); min-height: 28px;
+}
+.rules.folded .ruleFolded:hover { background: #FAFBFE; }
+.ruleFolded .rfK { color: var(--ink-3); font-size: 11px; }
+.ruleFolded .rfV { color: var(--ink); font-weight: 600; }
+.ruleFolded .rfV + .rfK { margin-left: 4px; }
+.ruleFolded .rfDiv { width: 1px; height: 12px; background: var(--line-2); margin: 0 6px; }
+.ruleFolded .rfTag {
+  font-size: 11px; color: var(--green); background: var(--green-bg);
+  border-radius: 999px; padding: 1px 8px;
+}
+.ruleFolded .rfTag.off { color: var(--ink-3); background: #F3F5F9; }
+.ruleFolded .grow { margin-left: auto; }
+.ruleFolded .rfBtn {
+  font-size: 11px; color: var(--ink-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 3px 9px; background: #fff; flex: none;
+}
+.rules.folded .ruleFolded:hover .rfBtn { border-color: var(--line-2); color: var(--ink); }
+
+/* 展开态右上角的「收起」小按钮 */
+/* v2.7.1：收起按钮从「卡片右上角绝对定位」改成时钟卡片右侧的内联小按钮 ——
+   时钟现在占着右上角，绝对定位会直接压住时间。 */
+.rulesFold {
+  flex: none;
+  border: 0; background: transparent; color: var(--ink-3);
+  font-size: 11px; cursor: pointer; padding: 3px 8px; border-radius: 7px;
+  margin: 0 4px;
+  white-space: nowrap;
+}
+.rulesFold:hover { background: #F1F4F9; color: var(--ink); }
+.rules { position: relative; }
+
+/* ---------------- 统计条：六宫格 → 一行 chips ---------------- */
+.stats {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
+  overflow: visible;
+  flex-wrap: wrap;
+}
+.stats .stat {
+  flex: none;
+  display: inline-flex;
+  flex-direction: row;          /* ⚠️ 老样式是 column（上下两行的大数字），不覆盖会又变成 45px 高 */
+  align-items: baseline;
+  gap: 5px;
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  min-width: 0;
+}
+.stats .stat:last-child { border-right: 1px solid var(--line); }
+.stats .stat .k {
+  font-size: 10.5px; letter-spacing: 0; text-transform: none;
+  color: var(--ink-3); font-weight: 500;
+}
+.stats .stat .v {
+  font-size: 13px; font-weight: 700; letter-spacing: -.01em;
+  line-height: 1.3;
+}
+.stats .stat .v small { font-size: 10px; margin-left: 1px; }
+.stats .stat .v.money { font-size: 13px; }
+/* 有异常/重复时给对应 chip 一点颜色，不然一串灰的看不出重点 */
+.stats .stat.hot { border-color: #F0DCBC; background: var(--amber-bg); }
+.stats .stat.hot .k { color: var(--amber-ink); }
+.stats .stat.hot .v { color: var(--amber-ink); }
+.stats .stat.bad { border-color: #F3C9CB; background: var(--red-bg); }
+.stats .stat.bad .k, .stats .stat.bad .v { color: var(--red); }
+
+/* ---------------- 工具栏：筛选 + 排序 ---------------- */
+.filters { display: flex; align-items: center; gap: 4px; }
+.filters .pill { padding: 3px 10px; }
+.filters .pill i {
+  font-style: normal; font-size: 10px; color: var(--ink-3); margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.filters .pill.on i { color: rgba(255,255,255,.7); }
+.sortSel {
+  height: 24px; border: 1px solid var(--line); border-radius: 999px;
+  background: #fff; color: var(--ink-2); font-size: 11px; padding: 0 8px;
+  font-family: var(--sans); cursor: pointer; outline: none;
+}
+.sortSel:hover { border-color: var(--line-2); }
+
+/* ---------------- 行内新增的小标记（跨批次 / 红蓝票） ---------------- */
+.tagMini {
+  display: inline-block; font-size: 9.5px; line-height: 1.5;
+  border-radius: 999px; padding: 0 6px; margin-left: 4px;
+  border: 1px dashed #9FB6FF; color: #1F47C7; background: #EAF0FF;
+  cursor: pointer; white-space: nowrap;
+}
+.tagMini.warn { border-color: #E8C17A; color: var(--amber-ink); background: var(--amber-bg); }
+.tagMini.red { border-color: #F0B4B6; color: var(--red); background: var(--red-bg); }
+.tagMini:hover { filter: brightness(.97); }
+
+/* ---------------- 右栏：跨批次 / 红蓝票 提示卡 ---------------- */
+.dCard {
+  border-radius: 10px; padding: 8px 10px; margin-bottom: 10px;
+  font-size: 11.5px; line-height: 1.65;
+}
+.dCard.warn { background: var(--amber-bg); border: 1px solid #F2DFC0; color: var(--amber-ink); }
+.dCard.info { background: var(--blue-bg); border: 1px solid #D3DEFF; color: #23408F; }
+.dCard b { font-weight: 700; }
+.dCard .dRow { display: flex; gap: 6px; margin-top: 4px; color: inherit; opacity: .85; }
+.dCard .dActs { display: flex; gap: 6px; margin-top: 7px; }
+.dCard .dActs .btn { flex: 1; justify-content: center; }
+
+/* 汇总区顶部的「本批有 N 张以前处理过」提示条 */
+.sumBanner {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--amber-bg); border: 1px solid #F2DFC0; color: var(--amber-ink);
+  border-radius: 10px; padding: 8px 10px; margin-bottom: 10px; font-size: 11.5px;
+}
+.sumBanner .btn { margin-left: auto; flex: none; }
+
+/* ---------------- 打包弹窗：清单勾选 ---------------- */
+.pkListTg { margin-top: 2px; align-items: flex-start; line-height: 1.5; }
+.pkListTg span { font-size: 12px; color: var(--ink-2); }
+
+/* ---------------- 操作历史：跨批次记忆 ---------------- */
+.hisMem {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line-2);
+  font-size: 11.5px; color: var(--ink-3);
+}
+.hisMem .btn { margin-left: auto; }
+
+/* ------------------------------------------------------------
+   v2.7 补丁：折叠条不换行 + 工具栏不横向滚动 + 行高收紧
+   （2026-10-18 实机截图发现：13 个字段时摘要太长，把右侧挤成竖字）
+   ------------------------------------------------------------ */
+
+/* 折叠条：一律单行，长摘要用省略号截断（完整规则展开看） */
+.rules.folded .ruleFolded { flex-wrap: nowrap; overflow: hidden; }
+.ruleFolded .rfK, .ruleFolded .rfV, .ruleFolded .rfTag, .ruleFolded .rfBtn { flex: none; white-space: nowrap; }
+.ruleFolded .rfV { max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
+.ruleFolded .rfV#rfTpl { max-width: 300px; }
+
+/* 工具栏：压缩筛选/排序/搜索，避免出现横向滚动条 */
+.filters .pill { padding: 3px 8px; font-size: 11.5px; }
+.filters .pill i { margin-left: 3px; font-size: 9.5px; }
+.sortSel { max-width: 104px; }
+.toolbar .searchWrap { flex: 0 1 190px; }
+#btnClear.pill { padding: 3px 9px; font-size: 11.5px; }
+
+/* 行高：46 → 40，一屏多放两行；两行状态的行自然高一点 */
+.row { min-height: 40px; }
+.stCell { gap: 1px; line-height: 1.2; }
+.stCell .tagMini { font-size: 9px; padding: 0 5px; }
+
+/* v2.7 再收一档：工具栏在 1080 宽窗口下刚好放下（实测超了 37px） */
+.toolbar { gap: 6px; }
+.toolbar .searchWrap { flex: 0 1 150px; }
+.filters .pill { padding: 3px 7px; }
+.sortSel { max-width: 92px; padding: 0 6px; }
+/* v2.7 第三次微调：还剩 3px 溢出 → 给足余量，窗口再窄一点也不滚 */
+.toolbar { gap: 5px; }
+.toolbar .searchWrap { flex: 0 1 138px; }
+.filters .pill { padding: 3px 6px; }
+
+/* ============================================================
+   v2.7.3：窄窗口工具栏（A+C 方案）
+   ------------------------------------------------------------
+   业主 2026-10-18 截图反馈：非全屏时工具栏右侧空出一条，
+   底下还冒出横向滚动条。根因有两条：
+     1) 「筛选中：显示 6 / 10 张」这行小字没 nowrap，被挤成 30px 宽后
+        竖排三行 → 工具栏从 34px 被撑到 60px，按钮上下就空出两条带；
+     2) 总宽超窗 → .toolbar{overflow-x:auto} 出现横向滚动条。
+   修法：
+     · 计数搬到统计条（.stat.filt），工具栏只放控件；
+     · 工具栏右侧补一条「已选 N 张 · ¥X」，把剩余空白变成有用信息；
+     · 窗口 ≤1180px 时 5 个筛子自动收成「筛选：xxx ▾」下拉。
+   ============================================================ */
+
+/* 统计条里的「筛选中 x / y」 */
+.stats .stat.filt {
+  border-color: #C9D6FF;
+  background: var(--blue-bg);
+  gap: 6px;
+}
+.stats .stat.filt .k { color: #3B5BB5; }
+.stats .stat.filt .v { color: #1F3E96; }
+.statX {
+  border: 0; background: transparent; color: #6B84C9;
+  font-size: 10px; line-height: 1; padding: 2px 3px; border-radius: 5px;
+  cursor: pointer;
+}
+.statX:hover { background: #DCE5FF; color: #1F3E96; }
+
+/* 工具栏右侧的已选摘要 */
+.tbSel {
+  font-size: 10.5px; color: var(--ink-3); white-space: nowrap;
+  font-variant-numeric: tabular-nums; flex: none;
+}
+.tbSel b { color: var(--ink-2); font-weight: 600; }
+.tbSel.has b:last-child { color: var(--ink); }
+
+/* 窄窗口才出现的「筛选 ▾」 */
+.filterCompact { display: none; position: relative; }
+#btnFilterMenu .cv { color: var(--ink-3); font-size: 9px; margin-left: 2px; }
+#btnFilterMenu.on { background: var(--ink); color: #fff; }
+#btnFilterMenu.on .cv { color: rgba(255,255,255,.7); }
+
+/* 向下弹出的菜单（导出菜单是向上弹的，这里要区分开） */
+.popMenu.down {
+  top: calc(100% + 6px);
+  bottom: auto;
+  min-width: 168px;
+  padding: 4px;
+}
+.popMenu.down button {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 9px; font-size: 11.5px; border-radius: 7px;
+}
+.popMenu.down button i {
+  margin-left: auto; font-style: normal; font-size: 10px; color: var(--ink-3);
+}
+.popMenu.down button.on { background: var(--blue-bg); color: var(--blue); }
+.popMenu.down button.on i { color: var(--blue); }
+
+/* 窄窗口：筛子收进下拉，工具栏单行放得下。
+   ⚠️ 这里**不能用媒体查询**：工具栏在左侧卡片里，卡片宽度 = 窗口 − 右侧 372px 详情栏。
+   窗口 1326 时卡片只有 899，媒体查询判断的是整个窗口，会误判成"够宽"。
+   所以由 JS 量工具栏自身宽度，加 .compact 类（见 fitToolbar）。 */
+.toolbar.compact .filters { display: none; }
+.toolbar.compact .filterCompact { display: block; }
+.toolbar.compact { gap: 4px; }
+.toolbar.compact .pill { padding: 3px 7px; font-size: 11px; }
+.toolbar.compact .searchWrap { flex: 0 1 96px; }
+/* 再窄一档：连「已选 N 张 · ¥X」都放不下时，先把金额收起来（只留张数） */
+.toolbar.tight .tbSel .amt { display: none; }
+.toolbar.tight .searchWrap { flex: 0 1 74px; }
+/* 最窄一档（卡片 <700px，接近窗口最小宽度 1100 时）：工具栏摘要先让位。
+   信息不丢 —— 左下角「已选 N 张」一直在。 */
+.toolbar.ultra .tbSel { display: none; }
+
+/* 批量删除按钮：没勾选时灰掉 */
+.pill:disabled { opacity: .42; cursor: not-allowed; }
+.pill:disabled:hover { background: #F1F4F9; color: var(--ink-2); }
+
+/* 状态标签里的小括号说明（v2.7.3：把「9月已报过」并进状态，不再另起一行） */
+.stCell .tag {
+  max-width: 100%;
+  display: inline-block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tagSub {
+  font-style: normal;
+  font-weight: 400;
+  font-size: .92em;
+  opacity: .82;
+  margin-left: 1px;
+}
+
+/* 删除选中：没勾选时不能只是"淡到看不见"——用户得知道有这个按钮。
+   改成白底虚线框 + 正常字色，读起来像"勾了就能用"。 */
+#btnDelSel:disabled {
+  opacity: 1;
+  background: #fff;
+  border: 1px dashed var(--line-2);
+  color: var(--ink-3);
+}
+#btnDelSel:disabled:hover { background: #fff; color: var(--ink-3); }
+
+/* ============================================================
+   v2.7.4：搜索收成放大镜 / 作者署名可发邮件
+   ============================================================ */
+
+/* 工具栏要能承载"浮在上面的搜索框" */
+.toolbar { position: relative; }
+
+/* 放大镜按钮：只在 compact 档出现 */
+.searchIcoBtn { display: none; padding: 3px 8px; align-items: center; }
+.searchIcoBtn svg { width: 13px; height: 13px; display: block; }
+.toolbar.compact .searchWrap { display: none; }
+.toolbar.compact .searchIcoBtn { display: inline-flex; }
+
+/* 点开后：输入框**浮在工具栏上**（不占布局，避免又把工具栏挤爆）。
+   右边留 46px 让放大镜本身还能点到（再点一次 = 收起）。 */
+/* v2.8.1：搜索展开改成"占位展开"，不再浮在工具栏上压住别的按钮。
+   做法：展开时把「已选摘要」和「排序」暂时收起（搜索期间用不上），
+   空出来的宽度正好放输入框，控件之间不会互相遮挡。 */
+.toolbar.searchOpen .tbSel,
+.toolbar.searchOpen .sortSel { display: none; }
+.toolbar.searchOpen .searchWrap {
+  display: flex;
+  position: static;
+  flex: 0 1 210px;
+  width: auto;
+  transform: none;
+  background: #fff;
+  border: 1px solid #C9D6FF;
+  border-radius: 999px;
+  padding: 0 4px;
+  box-shadow: 0 0 0 3px rgba(45, 91, 255, .10);
+}
+/* 已经有关键词时，放大镜高亮一下，免得用户忘了还在筛 */
+.searchIcoBtn.on { background: var(--blue-bg); color: var(--blue); border-color: #C9D6FF; }
+
+/* 作者署名做成"像链接"的按钮 */
+.brand .mailLink {
+  border: 0; background: transparent; padding: 0; margin: 0;
+  font: inherit; color: inherit; cursor: pointer;
+  border-bottom: 1px dashed transparent;
+}
+.brand .mailLink:hover { color: var(--blue); border-bottom-color: #B9C8F5; }
+.brand .mailLink .mailIco {
+  font-style: normal; font-size: 10px; margin-left: 3px; opacity: .7;
+}
+
+/* ============================================================
+   v2.8.0：自定义标题栏（方案 A）
+   ------------------------------------------------------------
+   系统标题栏已去掉（app.py 的 CUSTOM_FRAME）。这一条 CSS 做三件事：
+     1) 把 body 顶部内边距吃掉，让顶栏变成"窗口最上面那条"；
+     2) 右侧放 — □ ✕，46×58、贴窗口右边缘；
+     3) 原生标题栏模式（INVOICE_NATIVE_FRAME=1）下整组隐藏、内边距还原。
+   ============================================================ */
+
+body { padding-top: 0; }             /* 顶栏自己就是最上面一条 */
+/* v2.8.2：顶栏加高到 72px —— 业主反馈文字贴着上下边缘。
+   58px 时内容上下各只有 8px，太挤；72px 后上下各 15px，标题行在窗口顶端看起来是居中呼吸的。
+   窗口按钮 align-self:stretch，会跟着撑满 72px，不用单独改。 */
+.topbar { height: 72px; padding: 0; }
+
+/* 窗口按钮组：贴右边、撑满顶栏高度 */
+.winbtns {
+  display: flex;
+  align-self: stretch;
+  /* 负边距把按钮组撑满整个顶栏（含上下 padding），否则它只有文字那 40px 高 */
+  margin: -22px -20px -8px 10px;
+  flex: none;
+}
+.wbtn {
+  width: 46px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  padding: 0;
+  border-radius: 0;
+  transition: background .12s, color .12s;
+}
+.wbtn svg { width: 14px; height: 14px; display: block; }
+.wbtn:hover { background: #E9EDF3; color: var(--ink); }
+.wbtn:active { background: #DDE3EC; }
+.wbtn.close:hover { background: #E81123; color: #fff; }
+.wbtn.close:active { background: #C50F1F; color: #fff; }
+.wbtn .icoRestore { display: none; }
+body.win-max .wbtn .icoMax { display: none; }
+body.win-max .wbtn .icoRestore { display: block; }
+
+/* 顶栏可以按住拖动；里面的按钮/开关不算 */
+.topbar { cursor: default; }
+.topbar button, .topbar input, .topbar select, .topbar label,
+.topbar .tg, .topbar .winbtns { cursor: default; }
+.topbar .tg, .topbar button { cursor: pointer; }
+
+/* 回退到系统标题栏时：按钮组藏起来，恢复原来的顶部留白 */
+body.native-frame { padding-top: 18px; }
+body.native-frame .winbtns { display: none; }
+
+/* ============================================================
+   v2.8.3：顶栏做减法（业主选 A 版 + 借一点 C 的成组感）
+   ------------------------------------------------------------
+   原来：标题 21px + 版本小字 + 竖线 + 作者 + 路径 + 4 个操作（2 个深色实心）
+   现在：标题 18px，版本/作者并成一行小灰字；操作只留 1 个深色主按钮 + ⋯。
+   ============================================================ */
+
+/* 上下留白对等（业主截图反馈上下不一样）：
+   上 = padding-top 22；下 = padding-bottom 8 + body 的 14px 卡片间距 = 22。 */
+.topbar { height: auto; padding: 22px 0 8px; }
+
+.brand .logo, .logo { }                /* 占位，实际尺寸在下面 */
+.topbar .logo {
+  width: 30px; height: 30px;
+  border-radius: 9px;
+  font-size: 13px;
+  background: linear-gradient(145deg, #1B2130, #080B12);
+}
+
+.brand h1 { font-size: 18px; gap: 0; }
+
+/* 版本 / 作者：一行小灰字，跟在标题后面，**和标题同一条基线**。
+   ⚠️ 之前用 inline-flex，flex 容器的基线由第一个子项决定，加上 .ver 有
+   position:relative/top 偏移，结果这行字掉到了标题下面（业主截图反馈）。
+   改成普通内联流就没这个坑。 */
+.brand .metaLine {
+  display: inline;
+  margin-left: 9px;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--ink-3);
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+.brand .metaLine .ver {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-3);
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  position: static;
+  top: auto;
+  line-height: inherit;
+}
+.brand .metaLine .dotSep { font-style: normal; opacity: .55; margin: 0 5px; }
+.brand .author {
+  border-left: 0;
+  padding-left: 0;
+  margin-left: 0;
+  font-size: 11px;
+  color: var(--ink-3);
+  align-self: auto;
+  vertical-align: baseline;
+}
+.brand .author .mailIco { font-size: 9px; opacity: .8; }
+
+.topActions { gap: 8px; }
+.topActions .tg span { font-size: 10.5px; }
+.topActions .btn { padding: 6px 12px; font-size: 11.5px; border-radius: 9px; }
+
+/* ⋯ 菜单 */
+.topMore { position: relative; display: flex; }
+.topMoreBtn {
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  padding: 0;
+  color: var(--ink-3);
+  border-radius: 8px;
+}
+.topMoreBtn svg { width: 16px; height: 16px; display: block; }
+.topMoreBtn:hover { background: #E9EDF3; color: var(--ink-2); }
+#morePop { top: calc(100% + 6px); right: 0; left: auto; min-width: 150px; }
+#morePop button { display: flex; align-items: center; gap: 8px; font-size: 11.5px; }
+
+/* 菜单里的原件：不显示、不占位，但仍可被 click() 触发 */
+.keepHidden { display: none !important; }

@@ -1,0 +1,35 @@
+# 虚拟环境
+.venv/
+venv/
+
+# 打包产物（exe / 安装包不进仓库，走 Releases）
+dist/
+build/
+build_old_*/
+安装包/
+*.exe
+
+# 本机配置（含上次打开的文件夹路径，属于个人环境）
+config.json
+
+# 构建工具与测试脚手架（本机专用，体积大或依赖本地路径）
+tools/_nsis/
+tools/_bench/
+tools/_e2e/
+tools/_drag/
+tools/_merge/
+tools/_v25/
+tools/*.png
+ui-mockups/
+
+# Python
+__pycache__/
+*.py[cod]
+*.log
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 真实发票样本：绝不进公开仓库
+tests/真实样本/

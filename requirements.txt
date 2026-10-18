@@ -1,0 +1,24 @@
+# 全电发票批量重命名工具 —— 依赖清单
+# 生成日期：2026-10-16（v2.5.1）
+#
+# 新电脑上按「使用说明」建好 venv 后，执行：
+#   .venv\Scripts\pip.exe install -r requirements.txt
+#
+# ── 运行依赖（不装就跑不起来）─────────────────────────
+pywebview==6.2.1
+PyMuPDF==1.28.2
+openpyxl==3.1.5
+
+# ── 打包依赖（只有要重新生成 exe / 安装包时才需要）──────
+pyinstaller==6.22.3
+
+# ── 说明 ──────────────────────────────────────────────
+# 1) PyMuPDF 的 import 名有两种：新版 `import pymupdf`、老版 `import fitz`。
+#    本项目两种都兼容（见 invoice_parser.py / pair_core.py / merge_core.py 顶部）。
+#    pip 包名统一是 PyMuPDF，别去装名叫 fitz 的包（那是另一个东西）。
+#
+# 2) tkinter 是 Python 自带的，不用 pip 装。
+#    （它曾经被「一键查验」功能用做剪贴板，v2.5.1 已移除该功能，包体积因此小了 2.8MB）
+#
+# 3) 打安装包还需要 NSIS 编译器 —— 项目里已经带了便携版，
+#    在 tools\_nsis\makensis.exe，不用另外安装。

@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>全电发票批量重命名工具</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ============ 顶栏 ============ -->
+<header class="topbar" id="topbar">
+  <div class="logo">票</div>
+  <div class="brand">
+    <!-- v2.8.3：版本与作者并成一行小灰字（不再用竖线分隔），标题只留品牌名 -->
+    <h1>全电发票批量重命名<span class="metaLine"><span class="ver" id="appVer"></span><span class="dotSep" id="metaSep">·</span><span class="author" id="appAuthor"></span></span></h1>
+    <p id="srcLine">
+      <span class="path" id="srcPath">还没有选择文件夹</span>
+      <span class="dot" id="srcDot" hidden></span>
+      <span id="srcMeta"></span>
+    </p>
+  </div>
+  <div class="topActions">
+    <!-- v2.8.3（业主选 A 版）：顶栏只留一个深色主按钮。
+         「添加文件 / 重新识别」是低频操作，收进 ⋯ 菜单；「包含子文件夹」缩成小号开关。 -->
+    <label class="tg topTg" title="发票分散在多层子文件夹里时勾上（拖入一个文件夹时会自动打开）">
+      <input type="checkbox" id="swSub"><span>子文件夹</span>
+    </label>
+    <div class="topMore" id="topMore">
+      <button type="button" class="btn ghost topMoreBtn" id="btnMore" title="更多操作" aria-label="更多操作">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="3.4" cy="8" r="1.35" fill="currentColor"/>
+          <circle cx="8" cy="8" r="1.35" fill="currentColor"/>
+          <circle cx="12.6" cy="8" r="1.35" fill="currentColor"/>
+        </svg>
+      </button>
+      <div class="popMenu down" id="morePop" hidden>
+        <button type="button" data-more="add">添加文件</button>
+        <button type="button" data-more="re">重新识别</button>
+      </div>
+    </div>
+    <!-- 这两个按钮的原件保留（只是不显示），菜单里点的是它们的 click()，
+         这样已有的事件与禁用逻辑一行都不用改。 -->
+    <button type="button" class="btn ghost keepHidden" id="btnRescan" tabindex="-1">重新识别</button>
+    <button type="button" class="btn primary keepHidden" id="btnAddFile" tabindex="-1">添加文件</button>
+    <button class="btn primary" id="btnPick">选择文件夹</button>
+  </div>
+
+  <!-- 窗口按钮（v2.8.0）：系统标题栏已去掉，这三个按钮由界面自己画。
+       没启用自定义标题栏时（INVOICE_NATIVE_FRAME=1）整组会被隐藏。 -->
+  <div class="winbtns" id="winbtns">
+    <button type="button" class="wbtn" id="winMin" title="最小化" aria-label="最小化">
+      <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 5h6" stroke="currentColor" stroke-width="1.2"/></svg>
+    </button>
+    <button type="button" class="wbtn" id="winMax" title="最大化" aria-label="最大化">
+      <svg class="icoMax" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+        <rect x="2.2" y="2.2" width="5.6" height="5.6" stroke="currentColor" stroke-width="1.2"/>
+      </svg>
+      <svg class="icoRestore" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+        <rect x="3.1" y="1.7" width="5.2" height="5.2" stroke="currentColor" stroke-width="1.1"/>
+        <rect x="1.7" y="3.1" width="5.2" height="5.2" stroke="currentColor" stroke-width="1.1" fill="#fff"/>
+      </svg>
+    </button>
+    <button type="button" class="wbtn close" id="winClose" title="关闭" aria-label="关闭">
+      <svg viewBox="0 0 10 10" aria-hidden="true">
+        <path d="M2.4 2.4l5.2 5.2M7.6 2.4L2.4 7.6" stroke="currentColor" stroke-width="1.2"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<!-- ============ 规则卡 ============
+     v2.8.1：去掉折叠功能，永远保持展开（业主：不想再看到"收起/展开"）。
+     顶栏省了 30px、统计条也压成一行，不折叠也放得下 11 行。 -->
+<section class="card rules" id="rulesCard">
+  <div class="rulesRow">
+
+    <div class="field tplField">
+      <label>命名规则</label>
+      <div class="selectWrap">
+        <button type="button" class="inp pick" id="btnTplPick"
+                title="点击勾选要出现在文件名里的内容">
+          <span class="pickLabel" id="tplLabel">自定义</span>
+          <span class="cv" aria-hidden="true"></span>
+        </button>
+
+        <!-- 勾选面板。结构上分四段：head / body(可滚动) / preview / foot
+             —— head 与 foot 固定在面板两端，保证窗口再矮也能点到「完成」。
+             ⚠️ 原来顶部还有一块「已选内容」（一排可拖拽的 chip）。2026-10-16 用户要求删掉：
+                下面勾了几项一眼就能看出来，预览区也直接给了结论，那一块纯属重复，
+                还白占一屏高度。字段顺序改到下面的列表里调（勾上才有编号和 ‹ ›）。 -->
+        <div class="rulePanel" id="rulePanel" hidden>
+          <div class="rpHead">
+            <span class="rpTitle">命名规则</span>
+            <span class="rpCount" id="rpCount">已选 2 项</span>
+            <button type="button" class="rpClose" id="rpClose"
+                    title="收起（点面板外任意位置也可以）" aria-label="收起">✕</button>
+          </div>
+
+          <div class="rpBody" id="rpBody">
+            <div class="rpLabel">
+              点击添加或移除 <em>勾上的会排到最上面，按住可拖动调先后</em>
+            </div>
+            <div class="rpPool" id="rpPool"></div>
+
+            <div class="rpLabel">分隔符</div>
+            <div class="rpSep" id="rpSep"></div>
+          </div>
+
+          <!-- 效果预览：面板的「结论」，用户主要靠它核对规则对不对。
+               标签单独占一行放在上方（原来挤在左侧一列，白白吃掉 40px 宽度，
+               长文件名因此多折一行），把整宽让给文件名本身。 -->
+          <div class="rpPreview" id="rpPreviewBox">
+            <div class="rpPvHead">
+              <span class="rpPvLabel">效果</span>
+              <span class="rpPvSrc" id="rpPvSrc">示例</span>
+            </div>
+            <div class="rpPvVal" id="rpPreview">—</div>
+            <div class="rpPvHint" id="rpPvHint" hidden></div>
+          </div>
+
+          <div class="rpFoot">
+            <button type="button" class="btn tiny ghost" id="rpReset">恢复默认</button>
+            <!-- 模板库（v2.6）：放按钮、开弹窗 —— 不再往字段池里塞东西，
+                 否则 13 个字段会把池子挤成滚动条（实测点不到最下面几行）。 -->
+            <button type="button" class="btn tiny ghost" id="btnTplLib"
+                    title="把当前命名规则存成模板，或套用已存的模板">模板</button>
+            <button type="button" class="btn tiny primary" id="rpDone">完成</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>金额格式</label>
+      <div class="seg" id="segAmount">
+        <span data-v="smart" class="on">智能</span>
+        <span data-v="fixed">两位小数</span>
+        <span data-v="int">取整</span>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>处理方式</label>
+      <div class="seg" id="segMode">
+        <span data-v="rename" class="on">原地重命名</span>
+        <span data-v="copy">复制副本</span>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>附加</label>
+      <div class="toggles">
+        <label class="tg"><input type="checkbox" id="swDistribute"><span>按客户归档</span></label>
+        <label class="tg"><input type="checkbox" id="swBackup" checked><span>自动备份</span></label>
+        <!-- 跨批次重复报销预警（v2.7） -->
+        <label class="tg" title="按票号记住处理过的发票；下次在别的文件夹又遇到同一张票（金额也一致）时提醒你">
+          <input type="checkbox" id="swCross" checked><span>重复预警</span></label>
+      </div>
+    </div>
+
+    <!-- 右侧：时间 / 日期（v2.7.2）
+         无边框、无底色，直接"浮"在规则卡里（业主 2026-10-18：加边框太像外挂件）。
+         排版：左边时间（大到小两行），右边日期 + 星期，最右「收起」。
+         精确到分钟，不显示秒。 -->
+    <div class="ruleClock" id="ruleClock" title="当前时间（精确到分钟）">
+      <div class="rcTime">
+        <span class="t" id="rcTime">--:--</span>
+        <span class="s">现在</span>
+      </div>
+      <div class="rcDate">
+        <span class="d" id="rcDate">----年--月--日</span>
+        <span class="w" id="rcWeek">星期—</span>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============ 统计条 ============ -->
+<section class="stats" id="stats">
+  <div class="stat"><span class="k">扫描到</span><span class="v" id="stCount">0<small>张</small></span></div>
+  <div class="stat"><span class="k">已识别</span><span class="v ok" id="stOk">0<small>张</small></span></div>
+  <div class="stat"><span class="k">待处理</span><span class="v" id="stChecked">0<small>张</small></span></div>
+  <div class="stat wide"><span class="k">价税合计</span><span class="v money" id="stTotal">¥ 0.00</span></div>
+  <div class="stat"><span class="k">异常</span><span class="v warn" id="stBad">0<small>张</small></span></div>
+  <div class="stat"><span class="k">重复票号</span><span class="v warn" id="stDup">0<small>张</small></span></div>
+  <!-- 筛选计数（v2.7.3）：从工具栏搬过来的 —— 原来挤在工具栏右侧会被压成竖排 -->
+  <div class="stat filt" id="statFilter" hidden>
+    <span class="k">筛选中</span><span class="v" id="stFilter">0 / 0</span>
+    <button type="button" class="statX" id="stFilterX" title="清空筛选，看全部" aria-label="清空筛选">✕</button>
+  </div>
+</section>
+
+<!-- ============ 主体 ============ -->
+<main class="body">
+
+  <section class="card master">
+    <div class="toolbar">
+      <button class="pill" id="btnAll">全选</button>
+      <button class="pill" id="btnNone">全不选</button>
+      <button class="pill" id="btnOnlyOk">仅选可识别</button>
+      <!-- 批量改名：对勾选的这批统一加前缀/后缀或替换文字 ——
+           发票一多，逐行双击改名字很折磨 -->
+      <button class="pill" id="btnBatchRename" title="给勾选的这些统一加前缀、后缀或替换文字">
+        批量改名</button>
+      <!-- 批量删除（v2.7.3）：勾一批（或筛出来再全选）一次移除，不用一行行点垃圾桶。
+           ⚠️ 只从列表移除，绝不删磁盘文件；确认弹窗里会写清楚。 -->
+      <button class="pill danger" id="btnDelSel" disabled
+              title="把勾选的行从列表移除（不会删除磁盘上的发票文件）">删除选中</button>
+      <span class="sep"></span>
+      <!-- 状态筛选（v2.7）：31 张票里 3 张「待核对」，以前只能自己一行行找。
+           数量由 JS 实时填（见 renderFilters），不写死在这里。
+           v2.7.3：窗口窄时这一组会被收成「筛选：xxx ▾」（见下面的 filterCompact） -->
+      <div class="filters" id="filters">
+        <button type="button" class="pill on" data-f="all" id="btnFilterAll">全部</button>
+        <button type="button" class="pill" data-f="todo" id="btnFilterTodo"
+                title="只看需要处理的：号码异常 / 待核对 / 未识别">需处理</button>
+        <button type="button" class="pill" data-f="dup" id="btnDupOnly"
+                title="只看票号重复的行">重复</button>
+        <button type="button" class="pill" data-f="multi" id="btnFilterMulti"
+                title="只看「一个文件里装了好几张票」的 PDF">多张票</button>
+        <button type="button" class="pill" data-f="bad" id="btnFilterBad"
+                title="只看识别失败的">失败</button>
+      </div>
+      <!-- 窄窗口下的筛选：一个按钮 + 下拉菜单（≤1180px 自动切换） -->
+      <div class="filterCompact" id="filterCompact">
+        <button type="button" class="pill" id="btnFilterMenu" title="选择要看的发票">
+          筛选：全部 <span class="cv">▾</span>
+        </button>
+        <div class="popMenu down" id="filterPop" hidden>
+          <button type="button" data-f="all">全部<i>0</i></button>
+          <button type="button" data-f="todo">需处理<i>0</i></button>
+          <button type="button" data-f="dup">重复<i>0</i></button>
+          <button type="button" data-f="multi">多张票<i>0</i></button>
+          <button type="button" data-f="bad">失败<i>0</i></button>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <!-- 已选摘要（v2.7.3）：把工具栏右侧的空白变成有用信息 -->
+      <span class="tbSel" id="toolbarSel">已选 0 张</span>
+      <!-- 排序（v2.7）：以前只能按扫描顺序看，想按金额排就得先导出到 Excel -->
+      <select class="sortSel" id="sortSel" title="列表排序方式">
+        <option value="file">文件名</option>
+        <option value="amount">金额 大→小</option>
+        <option value="date">日期 新→旧</option>
+        <option value="buyer">购买方</option>
+      </select>
+      <!-- 搜索：发票一多就得靠它找人。放在「清空列表」左边、工具栏右半区，
+           跟左侧的筛选按钮分开，不干扰「全选/仅选可识别」那条动线。 -->
+      <div class="searchWrap">
+        <svg class="searchIco" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M10.4 10.4L14 14" stroke="currentColor" stroke-width="1.6"
+                stroke-linecap="round"/>
+        </svg>
+        <input class="searchInp" id="rowSearch" type="text" autocomplete="off"
+               placeholder="搜索购买方 / 文件名 / 发票号码…">
+        <button class="searchX" id="rowSearchX" hidden
+                title="清空搜索" aria-label="清空搜索">✕</button>
+      </div>
+      <!-- 放大镜（v2.7.4）：窄窗口时搜索框收成这个图标，点开才展开输入框。
+           宽窗口仍然直接显示输入框（图标不出现）。 -->
+      <button type="button" class="pill searchIcoBtn" id="btnSearchOpen"
+              title="搜索（Ctrl+F）" aria-label="搜索">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M10.4 10.4L14 14" stroke="currentColor" stroke-width="1.6"
+                stroke-linecap="round"/>
+        </svg>
+      </button>
+      <!-- 移除勾选按钮已去掉（2026-10-17 业主要求）：
+           一行一行删更直接，不必先勾选再点按钮。删除入口改成每行末尾的垃圾桶图标，
+           仍然只从**列表**里移除、不动磁盘文件。 -->
+      <button class="pill danger" id="btnClear" title="清空列表并忘记上次打开的文件夹">
+        清空
+      </button>
+    </div>
+
+    <div class="thead">
+      <div class="c chk"></div>
+      <div class="c file">原文件名</div>
+      <div class="c buyer">购买方</div>
+      <div class="c amt">价税合计</div>
+      <div class="c newn">新文件名</div>
+      <div class="c st">状态</div>
+      <div class="c act"></div>
+    </div>
+
+    <div class="rows" id="rows">
+      <div class="empty" id="emptyState">
+        <div class="art">票</div>
+        <h2>先把发票文件夹选进来</h2>
+        <p>点右上角「选择文件夹」，程序会自动读出每张发票的<b>购买方</b>和<b>开票金额</b>，<br>并生成「购买方—金额.pdf」格式的新文件名供你确认。</p>
+        <button class="btn primary" id="btnPick2">选择文件夹</button>
+        <p class="fine">不确定效果？先用 tests 文件夹里的 5 张样票试试。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 右侧详情 -->
+  <aside class="card detail" id="detail">
+    <div class="dhead">
+      <span id="dTitle">本批汇总</span>
+      <span class="idx" id="dIdx"></span>
+    </div>
+    <div class="dbody" id="dBody">
+      <div class="dempty">点击左侧任意一行<br>可在这里查看和修改</div>
+    </div>
+    <div class="dacts" id="dActs">
+      <button class="btn" id="btnRename" disabled>手动改名</button>
+      <button class="btn" id="btnOpen" disabled>打开 PDF</button>
+    </div>
+  </aside>
+
+</main>
+
+<!-- ============ 底部 ============ -->
+<footer class="foot">
+  <span class="sum" id="footSum">已选 0 张</span>
+  <div class="progWrap"><div class="prog" id="prog"><i></i></div></div>
+  <span class="progTxt" id="progTxt">就绪</span>
+  <div class="spacer"></div>
+  <button class="btn ghost" id="btnHistory" title="看每次改名/归档的记录，可以只撤销某一批">
+    <svg class="ico" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.4"/>
+      <path d="M8 4.4V8l2.4 1.6" stroke="currentColor" stroke-width="1.4"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>操作历史</button>
+  <button class="btn ghost" id="btnUndo"
+          title="只撤销最近一次改名（更早的批次在「操作历史」里选）">↩ 撤销上次</button>
+  <!-- 导出台账做成下拉：Excel 是财务要的（号码不变科学计数法），
+       CSV 留着给需要往别的系统导入的场景；
+       第三项「改名对照表」记的是过程（原名→新名），给审计留痕用（v2.6） -->
+  <div class="menuWrap">
+    <button class="btn ghost" id="btnExport" title="导出台账表格">
+      <svg class="ico" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M8 1.8v8.4M4.8 7.2 8 10.4l3.2-3.2" stroke="currentColor"
+              stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M2.2 12.2v1.2a.8.8 0 0 0 .8.8h10a.8.8 0 0 0 .8-.8v-1.2"
+              stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>导出台账</button>
+    <div class="popMenu" id="exportMenu" hidden>
+      <button data-fmt="xlsx">
+        <b>Excel 工作簿</b>
+        <em>推荐 · 发票号码不会变成科学计数法</em></button>
+      <button data-fmt="csv">
+        <b>CSV 表格</b>
+        <em>给需要导入其他系统的场景</em></button>
+      <button data-fmt="mapping">
+        <b>改名对照表 CSV</b>
+        <em>原名 → 新名 · 给审计留痕</em></button>
+    </div>
+  </div>
+  <!-- 打包文件：发票连同它挂着的行程单一起复制到一个文件夹，报销时整包交出去 -->
+  <button class="btn ghost" id="btnPack" title="把勾选的发票（含配套行程单）打包到一个文件夹">
+    <svg class="ico" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M1.8 5.2 8 2.2l6.2 3v5.6L8 13.8l-6.2-3z" stroke="currentColor"
+            stroke-width="1.4" stroke-linejoin="round"/>
+      <path d="M1.8 5.2 8 8.2l6.2-3M8 8.2v5.6" stroke="currentColor"
+            stroke-width="1.4" stroke-linejoin="round"/>
+    </svg>打包文件</button>
+  <!-- 合并 PDF：放在底部操作栏，夹在「导出」和「开始重命名」之间 ——
+       这一排全是动词（撤销/导出/重命名），是「对这批文件做什么」的执行区，
+       用户扫完列表后视线就落在这里。用 ghost 次要样式，
+       不跟黑色实心的「开始重命名」抢注意力。 -->
+  <button class="btn ghost" id="btnMerge" title="把勾选的 PDF 按顺序合成一个文件（原文件不动）">
+    <svg class="ico" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="1.6" y="3.6" width="9" height="11" rx="1.6"
+            stroke="currentColor" stroke-width="1.5"/>
+      <path d="M5.6 1.6h7.2a1.8 1.8 0 0 1 1.8 1.8v9.2"
+            stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>合并 PDF</button>
+  <button class="btn primary big" id="btnRun">开始重命名</button>
+</footer>
+
+<!-- ============ 执行确认弹窗 ============ -->
+<div class="modal" id="mRun" hidden>
+  <div class="sheet">
+    <div class="sheetHead">
+      <h3>确认执行</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="sheetBody" id="runBody"></div>
+    <div class="sheetFoot">
+      <label class="tg"><input type="checkbox" id="swBackup2" checked><span>执行前自动备份到「_备份」</span></label>
+      <div class="spacer"></div>
+      <button class="btn ghost" data-close>取消</button>
+      <button class="btn primary" id="btnRunGo">确定执行</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 补录弹窗 ============ -->
+<div class="modal" id="mFill" hidden>
+  <div class="sheet narrow">
+    <div class="sheetHead">
+      <h3>手动补录</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="sheetBody">
+      <div class="fillFile" id="fillFile"></div>
+      <div class="field">
+        <label>购买方（付款方）</label>
+        <input class="inp" id="fillBuyer" placeholder="例如：上海某某科技有限公司">
+      </div>
+      <div class="field">
+        <label>价税合计金额</label>
+        <input class="inp" id="fillAmount" placeholder="例如：1060.00">
+      </div>
+      <div class="hint">填完会自动生成新文件名，并把它勾选上。</div>
+    </div>
+    <div class="sheetFoot">
+      <div class="spacer"></div>
+      <button class="btn ghost" data-close>取消</button>
+      <button class="btn primary" id="btnFillGo">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 改名弹窗 ============ -->
+<div class="modal" id="mEdit" hidden>
+  <div class="sheet narrow">
+    <div class="sheetHead">
+      <h3>修改新文件名</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="sheetBody">
+      <div class="field">
+        <label>新文件名（不用带 .pdf）</label>
+        <input class="inp mono" id="editName" spellcheck="false">
+      </div>
+      <div class="hint">留空并保存 = 恢复按模板自动命名。</div>
+    </div>
+    <div class="sheetFoot">
+      <div class="spacer"></div>
+      <button class="btn ghost" data-close>取消</button>
+      <button class="btn primary" id="btnEditGo">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 结果弹窗 ============ -->
+<div class="modal" id="mDone" hidden>
+  <div class="sheet narrow">
+    <div class="sheetHead">
+      <h3 id="doneTitle">处理完成</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="sheetBody" id="doneBody"></div>
+    <div class="sheetFoot">
+      <div class="spacer"></div>
+      <button class="btn ghost" id="btnDoneFolder" hidden>打开所在文件夹</button>
+      <button class="btn primary" data-close>好的</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 确认弹窗 ============
+     替代浏览器原生 confirm()。原生那个的标题栏会显示
+     「127.0.0.1:60824 显示」（pywebview 用的是本地 HTTP 服务），
+     既暴露内部细节、又跟界面风格完全不搭，所以自己画一个。
+     用法见 app.js 的 askConfirm()。 -->
+<div class="modal" id="mConfirm" hidden>
+  <div class="sheet confirm" role="alertdialog" aria-modal="true"
+       aria-labelledby="cfTitle" aria-describedby="cfText">
+    <div class="sheetHead">
+      <h3 id="cfTitle">确认操作</h3>
+      <button class="x" id="cfX" aria-label="关闭">✕</button>
+    </div>
+    <div class="sheetBody cfBody">
+      <p class="cfText" id="cfText"></p>
+      <p class="cfNote" id="cfNote" hidden></p>
+    </div>
+    <div class="sheetFoot">
+      <div class="spacer"></div>
+      <button class="btn ghost" id="cfCancel">取消</button>
+      <button class="btn primary" id="cfOk">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 拖拽导入提示层 ============
+     拖拽时整窗盖上这一层。注意 pointer-events:none ——
+     它纯粹是视觉反馈；真正接住 drop 的是 Python 侧挂在 body 上的监听器
+     （只有宿主侧才拿得到文件绝对路径）。挡了事件反而收不到文件。 -->
+<div class="dropHint" id="dropHint" hidden>
+  <div class="dhCard">
+    <div class="dhTitle">松手即可导入</div>
+    <div class="dhText">发票文件（PDF / OFD / XML）· 文件夹 · 压缩包（ZIP）</div>
+  </div>
+</div>
+
+<!-- ============ 合并 PDF 弹窗 ============
+     清单顺序 = 合并顺序，可上下调整。
+     ⚠️ 只有 PDF 能合并，非 PDF 会灰显并说明原因（见 app.js renderMergeList）。 -->
+<div class="modal" id="mMerge" hidden>
+  <div class="sheet">
+    <div class="sheetHead">
+      <h3>合并 PDF</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="sheetBody">
+      <p class="mgIntro">把勾选的 PDF 按下面这个顺序合成一个文件。
+        生成的是<b>新文件</b>，原文件一个都不动。</p>
+
+      <div class="mgList" id="mgList"></div>
+
+      <div class="mgNote" id="mgNote" hidden></div>
+
+      <div class="field">
+        <label>合并后文件名</label>
+        <input class="inp" id="mgName" spellcheck="false">
+      </div>
+
+      <div class="field">
+        <label>保存到</label>
+        <div class="mgDir">
+          <input class="inp" id="mgDir" readonly>
+          <button class="btn" id="mgPickDir">选择…</button>
+        </div>
+      </div>
+
+      <label class="tg mgBookmark">
+        <input type="checkbox" id="mgBookmark" checked>
+        <span>每份文件加书签（用文件名做目录，在 PDF 阅读器里可一键跳转）</span>
+      </label>
+    </div>
+    <div class="sheetFoot">
+      <span class="mgSum" id="mgSum"></span>
+      <div class="spacer"></div>
+      <button class="btn ghost" data-close>取消</button>
+      <button class="btn primary" id="mgGo">开始合并</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 批量修改文件名 ============
+     ⚠️ 只改「待改的名字」，不碰磁盘 —— 真正改名还是走「开始重命名」，
+        这样才能整体撤销。批量操作最怕一改就落盘、错了退不回来。 -->
+<div class="modal" id="mBatch" hidden>
+  <div class="sheet narrow">
+    <div class="sheetHead">
+      <h3>批量修改文件名</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="sheetBody">
+      <p class="mgIntro">给勾选的 <b id="btCount">0</b> 张发票统一改名字。
+        <span class="fine">行程单的名字跟着发票走，不单独改。</span></p>
+
+      <div class="field">
+        <label>怎么改</label>
+        <div class="seg" id="btOp">
+          <span data-v="prefix" class="on">加前缀</span>
+          <span data-v="suffix">加后缀</span>
+          <span data-v="replace">替换文字</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label id="btLabel1">要加上去的文字</label>
+        <input class="inp" id="btText1" spellcheck="false"
+               placeholder="例如：2026年9月_">
+      </div>
+
+      <div class="field" id="btField2" hidden>
+        <label>替换成（留空 = 删掉）</label>
+        <input class="inp" id="btText2" spellcheck="false">
+      </div>
+
+      <div class="field">
+        <label>效果预览</label>
+        <div class="btPreview" id="btPreview">—</div>
+      </div>
+    </div>
+    <div class="sheetFoot">
+      <span class="mgSum" id="btSum"></span>
+      <div class="spacer"></div>
+      <button class="btn ghost" data-close>取消</button>
+      <button class="btn primary" id="btGo" disabled>应用</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 打包文件 ============ -->
+<div class="modal" id="mPack" hidden>
+  <div class="sheet narrow">
+    <div class="sheetHead">
+      <h3>打包文件</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="sheetBody">
+      <p class="mgIntro">把勾选的发票<b>连同它挂着的行程单</b>一起复制到一个文件夹，
+        报销时整包交出去。<b>原文件不动</b>。</p>
+      <div class="mgList" id="pkList"></div>
+      <div class="field">
+        <label>文件夹名</label>
+        <input class="inp" id="pkName" spellcheck="false">
+      </div>
+      <div class="field">
+        <label>保存到</label>
+        <div class="mgDir">
+          <input class="inp" id="pkDir" readonly>
+          <button class="btn" id="pkPickDir">选择…</button>
+        </div>
+      </div>
+      <!-- 报销清单（v2.7）：报销交上去对方要一张「几张、多少钱」的纸，
+           顺手生成在同一个文件夹里，不用再手工做一个 Excel -->
+      <label class="tg pkListTg" title="在打包出来的文件夹里，同时生成一个带合计的「报销清单.xlsx」">
+        <input type="checkbox" id="pkWithList" checked><span>同时生成「报销清单.xlsx」（带合计）</span>
+      </label>
+    </div>
+    <div class="sheetFoot">
+      <span class="mgSum" id="pkSum"></span>
+      <div class="spacer"></div>
+      <button class="btn ghost" data-close>取消</button>
+      <button class="btn primary" id="pkGo">开始打包</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 票面大图（v2.6.1） ============
+     列表右栏只有 280px 宽，数电票又是横版，文字缩得看不清。
+     点预览图打开这里：全屏大图 + 缩放 + 拖动 + 翻页，字段框跟着放大。 -->
+<div class="modal" id="mPv" hidden>
+  <div class="pvLight">
+    <div class="pvLightHead">
+      <span class="pvLightName" id="lbName"></span>
+      <span class="pvLightNav">
+        <button type="button" class="pvBtn" id="lbPrev" title="上一页">‹</button>
+        <span id="lbPageTxt">1 / 1</span>
+        <button type="button" class="pvBtn" id="lbNext" title="下一页">›</button>
+      </span>
+      <span class="pvLightZoom">
+        <button type="button" class="pvBtn" id="lbZoomOut" title="缩小">－</button>
+        <span id="lbZoomTxt">100%</span>
+        <button type="button" class="pvBtn" id="lbZoomIn" title="放大">＋</button>
+        <button type="button" class="pvBtn pvWide" id="lbFit">适合窗口</button>
+        <button type="button" class="pvBtn pvWide" id="lbOne">1:1</button>
+      </span>
+      <button type="button" class="pvLightX" id="lbClose" title="关闭 (Esc)">✕</button>
+    </div>
+    <div class="pvViewport" id="lbViewport">
+      <div class="pvStage" id="lbStage"></div>
+    </div>
+    <div class="pvLightFoot">滚轮缩放　·　按住拖动　·　Esc 关闭</div>
+  </div>
+</div>
+
+<!-- ============ 命名模板库（v2.6） ============
+     A 客户用「购买方—金额」、B 客户用「日期—金额」，以前只能来回改；
+     现在存下来一键切换。做成弹窗而不是塞进规则面板 —— 面板只有 396px 宽，
+     再把 13 个字段挤成滚动条就点不到最下面几行了。 -->
+<div class="modal" id="mTpl" hidden>
+  <div class="sheet narrow">
+    <div class="sheetHead">
+      <h3>命名模板</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="sheetBody">
+      <div class="hint">存几套常用规则，换客户时一键切。</div>
+      <div class="tplList" id="tplList"></div>
+      <div class="tplSaveRow">
+        <input class="inp" id="tplName" maxlength="20"
+               placeholder="给当前规则起个名，例如「A客户」">
+        <button class="btn primary" id="tplSave">保存当前</button>
+      </div>
+    </div>
+    <div class="sheetFoot">
+      <div class="spacer"></div>
+      <button class="btn ghost" data-close>关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 重复票取舍台（v2.6） ============
+     同一票号有 3 份时，靠列表颜色只能知道"重复了"，看不出"谁大谁小、哪个是 PDF"。
+     这里并排摆出来，选一份保留，其余从列表移除（磁盘文件不动）。 -->
+<div class="modal" id="mDup" hidden>
+  <div class="sheet wide">
+    <div class="sheetHead">
+      <h3 id="dupTitle">这几份是同一张发票</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="sheetBody">
+      <div class="dupSub" id="dupSub"></div>
+      <div class="dupCards" id="dupCards"></div>
+    </div>
+    <div class="sheetFoot">
+      <span class="hint" id="dupNote">另外几份会从列表移除，磁盘文件不动</span>
+      <div class="spacer"></div>
+      <button class="btn ghost" data-close>都留着</button>
+      <button class="btn primary" id="dupGo">保留这份，移除其余</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 操作历史（v2.6） ============
+     v2.5 之前只有「撤销上次」，一点就把所有记录全撤了。
+     这里按批次列出来，撤哪批由用户点。 -->
+<div class="modal" id="mHistory" hidden>
+  <div class="sheet">
+    <div class="sheetHead">
+      <h3>操作历史</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="sheetBody">
+      <div class="hint" id="hisHint">按时间倒序列出每次改名 / 归档，可以只撤销其中一批。</div>
+      <div class="hisList" id="hisList"></div>
+      <!-- 跨批次台账（v2.7）：这里管的不是"改过哪些文件"，而是"记住哪些票已经处理过" -->
+      <div class="hisMem">
+        <span id="hisMemTxt">跨批次记忆：0 张票</span>
+        <button type="button" class="btn tiny ghost" id="hisMemClear"
+                title="清空「哪些票处理过」的记忆。不会动发票文件，也不影响上面的操作历史。">
+          清空记忆</button>
+      </div>
+    </div>
+    <div class="sheetFoot">
+      <div class="spacer"></div>
+      <button class="btn ghost" data-close>关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 加密 PDF 密码（v2.6） ============ -->
+<div class="modal" id="mPwd" hidden>
+  <div class="sheet narrow">
+    <div class="sheetHead">
+      <h3>这张发票加密了</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="sheetBody">
+      <div class="fillFile" id="pwdFile"></div>
+      <div class="field">
+        <label>PDF 打开密码</label>
+        <input class="inp" id="pwdInput" type="password" autocomplete="off"
+               placeholder="输入密码后回车">
+      </div>
+      <div class="hint">密码只记在这次运行里，不会写进配置文件，也不会存进缓存。</div>
+    </div>
+    <div class="sheetFoot">
+      <div class="spacer"></div>
+      <button class="btn ghost" data-close>取消</button>
+      <button class="btn primary" id="pwdGo">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 多票 PDF 拆分（v2.6） ============
+     客户把几张票合并成一个 PDF 时，老版本只按第一张算，后面几张全错。
+     这里按页把每张票的边界列出来，确认后拆成独立文件。 -->
+<div class="modal" id="mSplit" hidden>
+  <div class="sheet">
+    <div class="sheetHead">
+      <h3>这个 PDF 里有好几张发票</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="sheetBody">
+      <div class="dupSub" id="splitSub"></div>
+      <div class="splitList" id="splitList"></div>
+      <div class="hint">
+        拆成「原名_第N张.pdf」放在同一个文件夹，再自动读进列表；
+        原来那个整份文件会从列表里移出（磁盘上的文件保留）。
+      </div>
+    </div>
+    <div class="sheetFoot">
+      <div class="spacer"></div>
+      <button class="btn ghost" data-close>先不拆</button>
+      <button class="btn primary" id="splitGo">拆成独立文件</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
