@@ -129,6 +129,7 @@ def _norm_cn(s):
     """大写金额归一化后再比对：各家开票系统的空格/结尾写法不一，先抹平"""
     s = re.sub(r"\s+", "", s or "")
     s = s.replace("（", "").replace("）", "").replace("(", "").replace(")", "")
+    s = re.sub(r"^(人民币|RMB|CNY)", "", s, flags=re.I)
     for tail in ("整", "正", "元整"):
         if s.endswith(tail):
             s = s[:-len(tail)]
@@ -145,13 +146,31 @@ def amount_cn_ok(amount, cn_text):
     if amount < 0:
         return None                       # 红字票的大写写法各家不统一，不判
     try:
-        expect = _norm_cn(amount_to_cn(amount))
+        forms = _cn_forms(amount)
     except Exception:
         return None
     got = _norm_cn(cn_text)
-    if not expect or not got:
+    if not forms or not got:
         return None
-    return expect == got
+    return got in forms
+
+
+def _cn_forms(amount):
+    """
+    同一个金额，票面上可能出现的几种**合法**写法（用于宽松比对）。
+
+    ⚠️ 不足 1 元时：国标写法是「玖角伍分」，不写「零圆」；
+       但程序拼串时会带上「零圆」→「零圆玖角伍分」，直接比会判成不一致。
+       业主 2026-10-18 报的「0.95 元通行费被标待核对」就是这个原因。
+    另外「整/正」有无、圆/元混用也一并容忍（_norm_cn 里统一）。
+    """
+    base = amount_to_cn(amount)
+    forms = {base}
+    if base.startswith("零圆"):
+        cut = base[2:]                    # 零圆玖角伍分 → 玖角伍分
+        forms.add(cut)
+        forms.add(cut.lstrip("零"))       # 零圆零伍分 → 伍分
+    return {_norm_cn(f) for f in forms}
 
 
 # ------------------------------------------------------------------ 日期

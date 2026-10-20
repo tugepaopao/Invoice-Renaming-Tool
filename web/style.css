@@ -2474,3 +2474,123 @@ body.native-frame .winbtns { display: none; }
 
 /* 菜单里的原件：不显示、不占位，但仍可被 click() 触发 */
 .keepHidden { display: none !important; }
+
+/* ============================================================
+   v2.8.7：窄窗口工具栏不再挤成一团
+   ------------------------------------------------------------
+   1080 宽时，左边 5 颗操作按钮 + 筛选 + 已选 + 排序 + 搜索 全平铺，
+   会把工具栏撑出横向滚动条（业主截图红框）。现在：
+     · 紧凑档把「全不选 / 仅选可识别 / 批量改名 / 删除选中」收进「批量 ▾」
+     · 只留「全选 + 批量 ▾」，其余照旧
+   ============================================================ */
+/* 不出现横向滚动条，但**不能**用 overflow:hidden —— 那会把「批量 ▾」下拉裁掉。
+   overflow-x: clip 只裁横向，纵向照常溢出（Chromium 90+，WebView2 支持）。 */
+.toolbar { overflow-x: clip; }
+
+.tbMore { position: relative; display: none; }
+.toolbar.compact .tbMore { display: block; }
+.toolbar.compact .tbAct { display: none; }
+
+#tbMorePop { min-width: 148px; }
+#tbMorePop button { white-space: nowrap; }
+#tbMorePop button.off { color: #C2C9D4; pointer-events: none; }
+#tbMorePop .dangerItem { color: var(--red); }
+#tbMorePop .dangerItem.off { color: #E3B7B7; }
+
+/* 紧凑档：删除分隔线（按钮都收进菜单了，留着会孤零零一条） */
+.toolbar.compact .sep { display: none; }
+
+/* 大列表：让浏览器自己跳过屏幕外的行（2000 张也不卡），无需改渲染逻辑 */
+.row { content-visibility: auto; contain-intrinsic-size: 0 40px; }
+
+/* ============================================================
+   v2.8.7：识别体检 / 汇总报表 / 打印报销单
+   ============================================================ */
+.statActs { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.statBtn {
+  font-size: 11px; color: var(--ink-2); background: #fff;
+  border: 1px solid var(--line); border-radius: 7px;
+  padding: 3px 9px; white-space: nowrap;
+}
+.statBtn:hover { border-color: var(--line-2); color: var(--ink); background: #F7F9FC; }
+.statBtn.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+
+.hlTable { width: 100%; border-collapse: collapse; font-size: 12px; }
+.hlTable th {
+  text-align: left; font-weight: 600; color: var(--ink-3);
+  font-size: 10.5px; padding: 6px 8px; border-bottom: 1px solid var(--line);
+}
+.hlTable td { padding: 7px 8px; border-bottom: 1px solid #F1F3F8; }
+.hlTable tr:last-child td { border-bottom: 0; }
+.hlTable .num { font-family: var(--disp); }
+.hlTable .miss { color: var(--red); }
+.hlTable .all { color: var(--green); }
+.hlLink { border: 0; background: none; color: var(--blue); font-size: 11px; padding: 0; }
+.hlLink:hover { text-decoration: underline; }
+
+.repGrid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+.repBlock h4 { font-size: 12px; color: var(--ink-2); margin-bottom: 8px; font-weight: 600; }
+.repRow { display: grid; grid-template-columns: 150px 1fr 76px; gap: 10px; align-items: center;
+          font-size: 11.5px; padding: 3px 0; }
+.repName { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.repBar { height: 8px; background: #EEF1F6; border-radius: 999px; overflow: hidden; }
+.repBar i { display: block; height: 100%; background: linear-gradient(90deg,#2D5BFF,#7A97FF); border-radius: 999px; }
+.repVal { text-align: right; font-family: var(--disp); color: var(--ink); }
+
+#printArea { display: none; }
+@media print {
+  body > * { display: none !important; }
+  #printArea { display: block !important; }
+  @page { margin: 16mm 14mm; }
+  .prTitle { font-size: 20px; font-weight: 700; text-align: center; margin-bottom: 4px; }
+  .prSub { text-align: center; color: #666; font-size: 11px; margin-bottom: 14px; }
+  .prTable { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .prTable th, .prTable td { border: 1px solid #999; padding: 6px 8px; }
+  .prTable th { background: #f2f2f2; }
+  .prTable td.n { text-align: right; }
+  .prFoot { margin-top: 14px; font-size: 12px; display: flex; justify-content: space-between; }
+  .prSign { margin-top: 28px; display: flex; gap: 40px; font-size: 12px; }
+  .prSign div { flex: 1; border-top: 1px solid #999; padding-top: 6px; }
+}
+
+/* ============================================================
+   v2.8.8：按业主反馈修的 5 处
+   ============================================================ */
+
+/* ① ⋯ 按钮三个点没居中：.btn 自带 padding/border，把 svg 顶偏了 */
+.topMoreBtn {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  line-height: 0;
+  display: grid !important;
+  place-items: center;
+}
+.topMoreBtn svg { display: block; width: 16px; height: 16px; margin: 0 auto; }
+
+/* ③ 去掉「文件名」排序框；搜索框恢复常驻（不再收成放大镜） */
+.sortSel { display: none !important; }
+.searchIcoBtn { display: none !important; }
+.toolbar.compact .searchWrap {
+  display: flex;
+  flex: 0 1 190px;
+  position: static;
+  width: auto;
+}
+
+
+/* ============================================================
+   v2.8.9：业主第 6 轮反馈
+   ============================================================ */
+
+/* ① 确认框必须盖在「操作历史」等弹窗上面（原来都是 z-index:100，
+      后出现的 DOM 反而压住确认框，看起来像"点了没反应"） */
+#mConfirm { z-index: 220; }
+
+/* ⑤ 已选 N 张 与 金额 字号统一 */
+.tbSel, .tbSel b, .tbSel .amt, .tbSel .amt b {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.tbSel b { font-weight: 600; color: var(--ink); }

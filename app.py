@@ -463,6 +463,26 @@ def main():
         fatal("找不到界面文件：\n%s\n\n请确认 web 文件夹与本程序放在一起。" % index)
         return 1
 
+    # 打包版启动自检：pymupdf 的两个 .pyd 缺一个，所有 PDF 都会报
+    # 「cannot import name '_extra' from partially initialized module 'pymupdf'」。
+    # 最常见的原因是**直接在压缩包里双击 exe**（只解压到临时目录），
+    # 或者杀软把 _extra.pyd 当可疑文件删了。这里提前说清楚，别让用户看一堆英文。
+    if getattr(sys, "frozen", False):
+        _base = getattr(sys, "_MEIPASS", "")
+        _pdir = os.path.join(_base, "pymupdf")
+        _need = ("_extra.pyd", "_mupdf.pyd")
+        _miss = [n for n in _need if not os.path.exists(os.path.join(_pdir, n))]
+        if _miss:
+            fatal("解析组件不完整，读不了 PDF。",
+                  "缺少文件：pymupdf\\" + "、".join(_miss) + "\n\n"
+                  "常见原因：\n"
+                  "  1) 直接在压缩包里双击运行（文件只解到临时目录）；\n"
+                  "  2) 杀毒软件把安装目录里的 .pyd 删了。\n\n"
+                  "处理办法：\n"
+                  "  · 用安装包重新安装（推荐），或把整个文件夹完整解压后再运行；\n"
+                  "  · 并把安装目录加入杀毒软件的白名单。")
+            return 1
+
     window = webview.create_window(
         WINDOW_TITLE,
         url=index,

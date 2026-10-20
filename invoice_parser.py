@@ -40,14 +40,41 @@ from cache_core import CACHE
 pymupdf = None
 
 
+class PymupdfError(RuntimeError):
+    """PyMuPDF 加载失败：给用户一句能看懂的话，别把英文堆到状态列"""
+
+
+_FITZ_LOCK = threading.Lock()
+_FITZ_HINT = ("解析组件（PyMuPDF）没加载起来。常见原因：\n"
+              "1) 直接在压缩包里双击运行，文件没完整解压；\n"
+              "2) 杀毒软件把安装目录里的 pymupdf\\_extra.pyd 当可疑文件删了。\n"
+              "处理：用安装程序重装（或把整个文件夹完整解压），"
+              "并把安装目录加入杀毒软件白名单。")
+
+
 def _fitz():
-    """取 PyMuPDF 模块（第一次调用时才真正导入）"""
+    """
+    取 PyMuPDF 模块（第一次调用时才真正导入）。
+
+    ⚠️ 必须加锁：扫描是**多线程**的，两个线程同时 import pymupdf 时，
+       后到的线程可能拿到"半初始化"的模块，报
+       `cannot import name '_extra' from partially initialized module 'pymupdf'`
+       （2026-10-19 业主另一台电脑上就是这个报错）。
+       锁住之后只会有一个线程负责导入，其余等它完成。
+    """
     global pymupdf
-    if pymupdf is None:
+    if pymupdf is not None:
+        return pymupdf
+    with _FITZ_LOCK:
+        if pymupdf is not None:
+            return pymupdf
         try:
             import pymupdf as _m          # PyMuPDF >= 1.24
-        except ImportError:               # pragma: no cover
-            import fitz as _m
+        except Exception:                 # pragma: no cover
+            try:
+                import fitz as _m         # 老版本别名
+            except Exception as exc:
+                raise PymupdfError(_FITZ_HINT) from exc
         pymupdf = _m
     return pymupdf
 
@@ -548,6 +575,27 @@ def _names_from_lines(lines):
                     name = _continue_name(name, lines, y0)
                 candidates.append((x0, y0, name))
 
+    # v2.8.5：机动车销售统一发票 / 二手车 / 收购类发票，票面上不写「名称：」，
+    # 而是「购货单位（人）：」「销货单位：」「出售人：」「收购单位：」。
+    # 只有主路径一个都没找到时才走这里，不改变专票/普票的既有行为。
+    if not candidates:
+        alias = re.compile(r"(?:购货单位(?:[（(]人[）)])?|销货单位|购买单位|销售单位|"
+                           r"出售人|收购单位|购方单位)\s*[：:]")
+        for x0, y0, text in lines:
+            t = _normalize(text)
+            hits = [m.start() for m in alias.finditer(t)]
+            if not hits:
+                continue
+            for i, pos in enumerate(hits):
+                start = pos
+                m_head = alias.match(t, pos)
+                start = m_head.end() if m_head else pos + 2
+                end = hits[i + 1] if i + 1 < len(hits) else len(t)
+                seg = _cut_at_stop(t[start:end])
+                name = _clean_name(seg)
+                if name and len(name) >= 2 and re.search(r"[\u4e00-\u9fa5A-Za-z]", name):
+                    candidates.append((x0, y0, name))
+
     if not candidates:
         return "", "", ""
 
@@ -724,6 +772,16 @@ def _extract_extras(lines, full_text: str, buyer: str = "", amount=None):
     m = RE_INVOICE_TYPE.search(full_text)
     if m:
         ex["inv_type"] = m.group(1).strip()
+
+    # v2.8.5：成品油 / 通行费 在票面上仍写「电子发票（普通发票）」，
+    # 只靠标题分不出来。这里按票面特征补一个后缀（有「车牌号」才算通行费，
+    # 避免把"含通行费明细的专票"误标）。
+    flat = _compact(full_text)
+    t = ex["inv_type"]
+    if t and "成品油" in flat and ("*汽油*" in flat or "*柴油*" in flat or "升" in flat):
+        ex["inv_type"] = t + "·成品油"
+    elif t and "通行费" in flat and "车牌号" in flat:
+        ex["inv_type"] = t + "·通行费"
 
     # ---- 发票代码（数电票已取消，仅老版电子发票/纸质票面存在）----
     m = RE_INVOICE_CODE.search(full_text)
@@ -1024,6 +1082,10 @@ def parse_pdf(path: str) -> InvoiceInfo:
     """解析单个 PDF，返回 InvoiceInfo"""
     try:
         doc = _fitz().open(path)
+    except PymupdfError:
+        info = InvoiceInfo(path)
+        info.message = "解析组件缺失：请重装或完整解压后运行"
+        return info
     except Exception as exc:
         info = InvoiceInfo(path)
         info.message = "无法打开 PDF：%s" % exc

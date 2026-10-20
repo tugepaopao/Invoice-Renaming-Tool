@@ -250,6 +250,15 @@ def normalize_config(cfg):
     return cfg
 
 
+def _vtuple(v):
+    """把 2.8.7 变成 (2, 8, 7)，用于比较版本大小（非数字部分按 0 处理）"""
+    out = []
+    for part in re.split(r"[.\-]", str(v or "")):
+        m = re.match(r"\d+", part)
+        out.append(int(m.group()) if m else 0)
+    return tuple(out)
+
+
 def load_config():
     cfg = dict(DEFAULTS)
     try:
@@ -2115,10 +2124,155 @@ class Api:
         except Exception as exc:
             return {"ok": False, "msg": str(exc)}
 
+    # ---------------- 诊断包 / 更新检查（v2.8.7） ----------------
+    HOMEPAGE_REPO = "tugepaopao/Invoice-Renaming-Tool"
+
+    def export_diagnostics(self):
+        """
+        导出诊断包：环境 + 组件自检 + 配置（脱敏）+ 本批概况，打包成 zip。
+
+        为什么需要：上次「pymupdf 缺 _extra.pyd」只能靠用户截图，
+        这张图还只能看到半行报错。有了诊断包，用户点一下、把 zip 发过来就能定位。
+
+        ⚠️ 绝不包含发票内容、也不含完整磁盘路径（只留文件夹名）。
+        """
+        try:
+            import datetime
+            import platform
+
+            stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            target = None
+            for d in ("Desktop", "Downloads"):
+                cand = os.path.join(os.path.expanduser("~"), d)
+                if os.path.isdir(cand):
+                    target = cand
+                    break
+            target = target or tempfile.gettempdir()
+            path = os.path.join(target, "发票工具诊断包_%s.zip" % stamp)
+
+            # ---- 组件自检：打包版缺 pyd 时，这里一眼能看出来 ----
+            res = resource_dir()
+            pdir = os.path.join(res, "pymupdf")
+            comp = {}
+            for name in ("_extra.pyd", "_mupdf.pyd", "__init__.py"):
+                p2 = os.path.join(pdir, name)
+                comp[name] = ("存在 %.1f MB" % (os.path.getsize(p2) / 1024 / 1024)
+                              if os.path.exists(p2) else "缺失")
+
+            env = [
+                "全电发票批量重命名工具 · 诊断包",
+                "生成时间：%s" % datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "版本：%s" % VERSION,
+                "",
+                "── 运行环境 ──",
+                "打包运行：%s" % bool(getattr(sys, "frozen", False)),
+                "Python：%s" % sys.version.split()[0],
+                "系统：%s %s" % (platform.system(), platform.release()),
+                "64 位：%s" % (sys.maxsize > 2 ** 32),
+                "CPU 核心：%s" % (os.cpu_count() or "?"),
+                "exe：%s" % sys.executable,
+                "资源目录：%s" % res,
+                "数据目录：%s" % data_dir(),
+                "配置：%s" % CONFIG_PATH,
+                "",
+                "── 解析组件 ──",
+            ]
+            env += ["%s：%s" % (k, v) for k, v in comp.items()]
+            try:
+                import pymupdf
+                env.append("pymupdf 版本：%s" % (pymupdf.version[0],))
+                env.append("pymupdf 位置：%s" % getattr(pymupdf, "__file__", "?"))
+            except Exception as exc:
+                env.append("pymupdf 导入失败：%s" % exc)
+
+            # ---- 配置脱敏：只保留文件夹名 ----
+            cfg = {}
+            try:
+                cfg = dict(load_config() or {})
+            except Exception:
+                pass
+            if cfg.get("lastFolder"):
+                cfg["lastFolder"] = "…\\" + os.path.basename(
+                    str(cfg["lastFolder"]).rstrip("\\/"))
+
+            rows = self.items or []
+            summary = {
+                "发票数": len(rows),
+                "已识别": sum(1 for r in rows if getattr(r, "ok", False)),
+                "格式分布": {},
+                "票种分布": {},
+            }
+            for r in rows:
+                summary["格式分布"][r.fmt or "?"] = summary["格式分布"].get(r.fmt or "?", 0) + 1
+                t = (r.inv_type or "未识别")
+                summary["票种分布"][t] = summary["票种分布"].get(t, 0) + 1
+
+            with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+                z.writestr("环境与组件.txt", "\r\n".join(env))
+                z.writestr("配置（已脱敏）.json",
+                           json.dumps(cfg, ensure_ascii=False, indent=2))
+                z.writestr("本批概况.json",
+                           json.dumps(summary, ensure_ascii=False, indent=2))
+            return {"ok": True, "path": path}
+        except Exception as exc:
+            return {"ok": False, "msg": str(exc)}
+
+    def cn_amount(self, value):
+        """金额 → 中文大写（打印报销单的「合计」用）"""
+        try:
+            import check_core as CC
+            return {"ok": True, "text": CC.amount_to_cn(float(value or 0))}
+        except Exception as exc:
+            return {"ok": False, "msg": str(exc)}
+
+    def reveal_file(self, path):
+        """在资源管理器里定位到刚导出的文件"""
+        try:
+            if path and os.path.exists(path):
+                subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+                return {"ok": True}
+            return {"ok": False, "msg": "文件不在了"}
+        except Exception as exc:
+            return {"ok": False, "msg": str(exc)}
+
+    def check_update(self):
+        """
+        检查有没有新版本（只查 GitHub Releases，不下载）。
+
+        设计取舍：不做静默下载安装 —— 一个财务工具在后台替换自己的 exe，
+        风险比省几次点击大得多。发现新版本就提示，用户点「打开发布页」自己下。
+        """
+        try:
+            import urllib.request
+            import urllib.error
+            url = ("https://api.github.com/repos/%s/releases/latest" % self.HOMEPAGE_REPO)
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "invoice-renamer", "Accept": "application/vnd.github+json"})
+            with urllib.request.urlopen(req, timeout=6) as r:
+                data = json.loads(r.read().decode("utf-8", "replace"))
+            latest = str(data.get("tag_name") or "").lstrip("vV")
+            page = data.get("html_url") or ("https://github.com/" + self.HOMEPAGE_REPO + "/releases")
+            return {"ok": True, "latest": latest, "current": VERSION,
+                    "url": page, "notes": (data.get("body") or "")[:1200],
+                    "newer": _vtuple(latest) > _vtuple(VERSION)}
+        except urllib.error.HTTPError as exc:
+            page = ("https://github.com/%s/releases" % self.HOMEPAGE_REPO)
+            if exc.code in (403, 429):
+                # GitHub 对未登录请求限量（每小时 60 次），用完就是这个错
+                return {"ok": False, "url": page,
+                        "msg": "GitHub 的查询次数用完了（每个网络每小时 60 次）。\n"
+                               "过一会儿再试，或者直接去发布页看。"}
+            return {"ok": False, "url": page,
+                    "msg": "检查更新失败（HTTP %s）。可以先去发布页看看。" % exc.code}
+        except Exception as exc:
+            page = ("https://github.com/%s/releases" % self.HOMEPAGE_REPO)
+            return {"ok": False, "url": page,
+                    "msg": "连不上 GitHub（%s）。\n公司网络可能拦了，可以先去发布页看看。" % exc}
+
     # ---------------- 项目主页（v2.8.1） ----------------
     HOMEPAGE = "https://github.com/tugepaopao/Invoice-Renaming-Tool"
 
-    def open_homepage(self):
+    def open_homepage(self, url=None):
         """
         点「作者 豪崽子」时打开项目主页。
 
@@ -2127,8 +2281,9 @@ class Api:
         """
         try:
             import webbrowser
-            if webbrowser.open(self.HOMEPAGE):
-                return {"ok": True, "url": self.HOMEPAGE}
+            target = url or self.HOMEPAGE
+            if webbrowser.open(target):
+                return {"ok": True, "url": target}
         except Exception:
             pass
         # 兜底：把网址复制到剪贴板

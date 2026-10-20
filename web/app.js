@@ -960,11 +960,8 @@ if (searchX) {
  * 否则又要把工具栏挤到溢出，等于白改。
  */
 function openSearch() {
-  const tb = document.querySelector(".master .toolbar");
-  // 宽布局下搜索框本来就展开着，只有紧凑档才需要"临时撑开"
-  if (tb && tb.classList.contains("compact")) tb.classList.add("searchOpen");
+  // v2.8.8：搜索框改成**常驻**（业主：不要收成放大镜），这里只管聚焦
   const i = $("#rowSearch");
-  // 等一帧再聚焦：此刻输入框刚从 display:none 变回可见
   if (i) setTimeout(() => { i.focus(); i.select(); }, 20);
 }
 function closeSearch() {
@@ -2066,6 +2063,16 @@ $$(".modal").forEach(m => {
     if (e.target === m) m.hidden = true;
   });
 });
+
+/* v2.8.8：关闭按钮一律事件委托。
+   原来启动时一次性绑 $$("[data-close]")，而「识别体检 / 汇总报表」写在 </body> 前、
+   比脚本晚，X 和「关闭」全都没绑上，只能按 Esc（业主反馈）。 */
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-close]");
+  if (!b) return;
+  const m = b.closest(".modal");
+  if (m) m.hidden = true;
+});
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") $$(".modal").forEach(m => m.hidden = true);
   if (e.key === "Enter" && !$("#mRun").hidden) $("#btnRunGo").click();
@@ -2904,27 +2911,23 @@ async function openHistory() {
   $("#mHistory").hidden = false;
 }
 
-// 清空跨批次记忆
-const hisClear = $("#hisMemClear");
-if (hisClear) {
-  hisClear.onclick = async () => {
-    const ok = await askConfirm({
-      title: "清空跨批次记忆？",
-      text: "清空后，程序不再记得「哪些票以前处理过」，也就不会提示重复报销。",
-      note: "只清这份记忆，不动发票文件，也不影响上面的操作历史。",
-      okText: "清空",
-      danger: true,
-    });
-    if (!ok) return;
-    const r = await call("clear_history_index");
-    if (r && r.ok) {
-      const t = $("#hisMemTxt");
-      if (t) t.textContent = "跨批次记忆：0 张票（用于提醒「以前处理过」）";
-      toast(r.msg || "已清空");
-      refreshUndoBtn();
-    }
-  };
-}
+// 清空跨批次记忆（v2.8.8：事件委托 + 清完立刻重绘弹窗）
+document.addEventListener("click", async (e) => {
+  if (!e.target.closest("#hisMemClear")) return;
+  const ok = await askConfirm({
+    title: "清空跨批次记忆？",
+    text: "清空后，程序不再记得「哪些票以前处理过」，也就不会提示重复报销。",
+    note: "只清这份记忆，不动发票文件，也不影响上面的操作历史。",
+    okText: "清空",
+    danger: true,
+  });
+  if (!ok) return;
+  const r = await call("clear_history_index");
+  if (!r || !r.ok) { toast((r && r.msg) || "清空失败", true); return; }
+  await openHistory();          // 重新拉一次：弹窗不关也能看到计数变成 0
+  toast(r.msg || "已清空");
+  refreshUndoBtn();
+});
 
 $("#hisList").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-undo]");
@@ -3343,7 +3346,10 @@ if ($("#ruleClock")) {
   $$("#morePop [data-more]").forEach((el) => {
     el.onclick = () => {
       pop.hidden = true;
-      const src = el.dataset.more === "add" ? $("#btnAddFile") : $("#btnRescan");
+      const kind = el.dataset.more;
+      // 「检查更新 / 导出诊断包」由 initInsights 绑定，别误当成"重新识别"
+      if (kind !== "add" && kind !== "re") return;
+      const src = kind === "add" ? $("#btnAddFile") : $("#btnRescan");
       if (!src || src.disabled) {
         toast("现在还用不了：正在处理上一批，请稍候", true);
         return;
@@ -3425,4 +3431,289 @@ window.__setWinMax = setWinMax;
     if (isChrome(e.target)) return;
     btnMax.click();
   });
+})();
+
+/* =========================================================
+   v2.8.7：窄窗口「批量 ▾」菜单 + 键盘快捷键
+   ========================================================= */
+(function initToolbarMore() {
+  const btn = $("#btnTbMore");
+  const pop = $("#tbMorePop");
+  if (!btn || !pop) return;
+
+  const MAP = { none: "#btnNone", onlyok: "#btnOnlyOk",
+                rename: "#btnBatchRename", del: "#btnDelSel" };
+
+  const sync = () => {
+    ["rename", "del"].forEach((k) => {
+      const item = pop.querySelector(`[data-act="${k}"]`);
+      const src = $(MAP[k]);
+      if (item && src) item.classList.toggle("off", !!src.disabled);
+    });
+  };
+
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    sync();
+    pop.hidden = !pop.hidden;
+  };
+  pop.querySelectorAll("[data-act]").forEach((el) => {
+    el.onclick = () => {
+      pop.hidden = true;
+      const src = $(MAP[el.dataset.act]);
+      if (src && !src.disabled) src.click();
+    };
+  });
+  document.addEventListener("click", (e) => {
+    if (!pop.hidden && !e.target.closest("#tbMore")) pop.hidden = true;
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") pop.hidden = true;
+  });
+})();
+
+/* ---------------------------------------------------------
+   v2.8.7：F2 手动改名
+   ---------------------------------------------------------
+   ⚠️ 不要在这里再写 Ctrl+Z / Delete / ↑↓ / Ctrl+F ——
+      下面（原 v2.7 的 keydown）已经有一整套，重复绑会一次按键触发两次
+      （实测：Delete 会同时移除一行并弹出批量删除确认）。
+      这里只补一个原本没有的 F2。
+   --------------------------------------------------------- */
+(function initExtraShortcuts() {
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "F2") return;
+    const t = e.target;
+    const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA"
+                         || t.isContentEditable);
+    if (typing) return;
+    if ($$(".modal").some((m) => !m.hidden)) return;
+    const b = $("#btnRename");
+    if (b && !b.disabled) {
+      e.preventDefault();
+      b.click();
+    }
+  });
+})();
+
+/* =========================================================
+   v2.8.7：识别体检 / 汇总报表 / 检查更新 / 诊断包
+   ========================================================= */
+(function initInsights() {
+  const esc = (s) => String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  /* ---------------- 识别体检 ---------------- */
+  function openHealth() {
+    const rows = (S && S.rows) || [];
+    if (!rows.length) { toast("先扫描一批发票再看体检"); return; }
+
+    const by = new Map();
+    rows.forEach((r) => {
+      const t = (r.type || "").trim() || "未识别票种";
+      const o = by.get(t) || { t, n: 0, buyer: 0, amount: 0, remark: 0, bad: [] };
+      o.n += 1;
+      if (r.buyer) o.buyer += 1;
+      if (r.amount != null) o.amount += 1;
+      if (r.remark) o.remark += 1;
+      if (!r.buyer || r.amount == null) {
+        const miss = [];
+        if (!r.buyer) miss.push("购买方");
+        if (r.amount == null) miss.push("金额");
+        o.bad.push({ i: r.i, file: r.fileName || r.path, miss });
+      }
+      by.set(t, o);
+    });
+
+    const list = [...by.values()].sort((a, b) => b.n - a.n);
+    const cell = (ok, n) => `<span class="${ok === n ? "all" : "miss"}">${ok}/${n}</span>`;
+
+    let html = `<div class="hlWrap"><table class="hlTable">
+      <tr><th>票种</th><th>张数</th><th>购买方</th><th>金额</th><th>备注</th><th></th></tr>`;
+    list.forEach((o) => {
+      html += `<tr>
+        <td>${esc(o.t)}</td>
+        <td class="num">${o.n}</td>
+        <td class="num">${cell(o.buyer, o.n)}</td>
+        <td class="num">${cell(o.amount, o.n)}</td>
+        <td class="num">${o.remark}/${o.n}</td>
+        <td>${o.bad.length
+          ? `<button class="hlLink" data-goto="${o.bad[0].i}">看第 ${o.bad[0].i + 1} 行</button>`
+          : `<span style="color:#98A1B2;font-size:11px">全部读到</span>`}</td>
+      </tr>`;
+    });
+    html += `</table></div>`;
+
+    const badAll = list.reduce((a, o) => a.concat(o.bad), []);
+    if (badAll.length) {
+      html += `<div style="margin-top:14px">
+        <div style="font-size:11.5px;color:#5A6475;margin-bottom:6px">
+          有 ${badAll.length} 张没读到关键字段（点一行可定位）：</div>
+        <div style="max-height:180px;overflow:auto;border:1px solid #EEF1F6;border-radius:8px">`;
+      badAll.slice(0, 50).forEach((b) => {
+        html += `<div class="hlBadRow" data-goto="${b.i}"
+          style="padding:6px 10px;border-bottom:1px solid #F5F7FA;font-size:11px;cursor:pointer">
+          <b>${esc(b.file).slice(0, 46)}</b>
+          <span style="color:#D93A3F">　缺：${b.miss.join("、")}</span></div>`;
+      });
+      html += `</div></div>`;
+    }
+    $("#healthBody").innerHTML = html;
+    $("#mHealth").hidden = false;
+
+    $$("#healthBody [data-goto]").forEach((el) => {
+      el.onclick = () => {
+        const i = +el.dataset.goto;
+        $("#mHealth").hidden = true;
+        const row = document.querySelector(`#rows .row[data-i="${i}"]`);
+        if (row) { row.click(); row.scrollIntoView({ block: "center" }); }
+      };
+    });
+  }
+
+  /* ---------------- 汇总报表 ---------------- */
+  const money = (n) => "¥" + (Number(n) || 0).toLocaleString("zh-CN",
+    { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  function bars(items, total, unit) {
+    if (!items.length) return `<div style="color:#98A1B2;font-size:11.5px">暂无数据</div>`;
+    const max = Math.max(...items.map((x) => x.v));
+    return items.map((x) => `<div class="repRow">
+      <span class="repName" title="${esc(x.k)}">${esc(x.k)}</span>
+      <span class="repBar"><i style="width:${max ? Math.round(x.v / max * 100) : 0}%"></i></span>
+      <span class="repVal">${unit === "¥" ? money(x.v) : x.v + " 张"}</span>
+    </div>`).join("");
+  }
+
+  function openReport() {
+    const rows = (S && S.rows) || [];
+    if (!rows.length) { toast("先扫描一批发票再看报表"); return; }
+
+    const withAmt = rows.filter((r) => r.amount != null);
+    const total = withAmt.reduce((a, r) => a + r.amount, 0);
+
+    const byBuyer = new Map();
+    const byMonth = new Map();
+    withAmt.forEach((r) => {
+      const k = r.buyer || "（未识别购买方）";
+      byBuyer.set(k, (byBuyer.get(k) || 0) + r.amount);
+      const d = String(r.date || "");
+      const m = /^\d{8}$/.test(d) ? d.slice(0, 4) + "年" + d.slice(4, 6) + "月" : "日期未知";
+      byMonth.set(m, (byMonth.get(m) || 0) + r.amount);
+    });
+    const topBuyer = [...byBuyer.entries()].map(([k, v]) => ({ k, v }))
+      .sort((a, b) => b.v - a.v).slice(0, 8);
+    const months = [...byMonth.entries()].map(([k, v]) => ({ k, v }))
+      .sort((a, b) => a.k.localeCompare(b.k));
+
+    $("#reportBody").innerHTML = `
+      <div style="display:flex;gap:22px;margin-bottom:16px">
+        <div><div style="font-size:10.5px;color:#98A1B2">本批张数</div>
+          <div style="font-size:22px;font-family:var(--disp)">${rows.length}</div></div>
+        <div><div style="font-size:10.5px;color:#98A1B2">价税合计</div>
+          <div style="font-size:22px;font-family:var(--disp)">${money(total)}</div></div>
+        <div><div style="font-size:10.5px;color:#98A1B2">平均每张</div>
+          <div style="font-size:22px;font-family:var(--disp)">${money(withAmt.length ? total / withAmt.length : 0)}</div></div>
+      </div>
+      <div class="repGrid">
+        <div class="repBlock"><h4>按客户（前 8）</h4>${bars(topBuyer, total, "¥")}</div>
+        <div class="repBlock"><h4>按月</h4>${bars(months, total, "¥")}</div>
+      </div>`;
+    $("#reportHint").textContent = `合计 ${money(total)}，可打印成报销单`;
+    $("#mReport").hidden = false;
+  }
+
+  /* ---------------- 打印报销单 ---------------- */
+  async function printReport() {
+    const rows = (S && S.rows) || [];
+    const use = rows.filter((r) => r.amount != null);
+    if (!use.length) { toast("没有可打印的发票"); return; }
+    const total = use.reduce((a, r) => a + r.amount, 0);
+    let cn = "";
+    try {
+      const r = await call("cn_amount", total);
+      cn = (r && r.text) || "";
+    } catch (_) {}
+
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const body = use.map((r, k) => `<tr>
+      <td>${k + 1}</td>
+      <td>${r.date ? String(r.date).replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3") : ""}</td>
+      <td>${esc(r.buyer || "")}</td>
+      <td>${esc(r.no || "")}</td>
+      <td class="n">${(r.amount || 0).toFixed(2)}</td>
+    </tr>`).join("");
+
+    $("#printArea").innerHTML = `
+      <div class="prTitle">发票报销清单</div>
+      <div class="prSub">打印日期 ${stamp}　·　共 ${use.length} 张</div>
+      <table class="prTable">
+        <tr><th style="width:44px">序号</th><th style="width:96px">开票日期</th>
+            <th>购买方</th><th style="width:190px">发票号码</th>
+            <th style="width:96px">金额</th></tr>
+        ${body}
+      </table>
+      <div class="prFoot">
+        <span>合计（小写）：¥ ${total.toFixed(2)}</span>
+        <span>合计（大写）：${cn}</span>
+      </div>
+      <div class="prSign">
+        <div>报销人签字</div><div>部门负责人</div><div>财务审核</div>
+      </div>`;
+    window.print();
+  }
+
+  /* ---------------- 检查更新 / 诊断包 ---------------- */
+  async function checkUpdate() {
+    toast("正在检查新版本…");
+    let r = null;
+    try { r = await call("check_update"); } catch (_) {}
+    if (!r || !r.ok) {
+      const msg = (r && r.msg) || "联网检查失败，可稍后再试";
+      if (r && r.url) {
+        if (confirm(msg + "\n\n要打开下载页面自己看吗？")) call("open_homepage", r.url);
+      } else {
+        toast(msg, true);
+      }
+      return;
+    }
+    if (!r.newer) { toast(`已是最新版（v${r.current}）`); return; }
+    const go = confirm(`发现新版本 v${r.latest}（当前 v${r.current}）。\n\n` +
+      `打开下载页面？（浏览器会跳到 GitHub Releases）`);
+    if (go) {
+      const res = await call("open_homepage");
+      if (res && !res.ok) toast(res.msg || "打不开浏览器", true);
+    }
+  }
+
+  async function exportDiag() {
+    toast("正在生成诊断包…");
+    let r = null;
+    try { r = await call("export_diagnostics"); } catch (_) {}
+    if (!r || !r.ok) { toast((r && r.msg) || "生成失败", true); return; }
+    if (confirm(`诊断包已生成：\n${r.path}\n\n不含任何发票内容。\n要打开所在文件夹吗？`)) {
+      call("reveal_file", r.path);
+    }
+  }
+
+  const on = (id, fn) => {
+    const el = $(id);
+    if (el) el.addEventListener("click", fn);
+  };
+  const bind = () => {
+    on("#btnHealth", openHealth);
+    on("#btnReport", openReport);
+    on("#btnPrintReport", printReport);
+    on("[data-more='update']", checkUpdate);
+    on("[data-more='diag']", exportDiag);
+  };
+  // ⚠️ 这几个按钮在弹窗里，弹窗写在 </body> 前、可能晚于本脚本执行 ——
+  //    直接绑会绑到 null（实测：#btnPrintReport.onclick 一直是空）。
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bind);
+  } else {
+    bind();
+  }
 })();

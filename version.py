@@ -10,7 +10,7 @@
       不一致就直接报错退出（见 tools/build.py 的 check_version()）
 """
 
-VERSION = "2.8.4"
+VERSION = "2.8.9"
 
 # 作者署名（2026-10-17 业主指定：加一个作者名「豪崽子」）。
 # 只用于界面显示和安装包的版本信息，**不改 APP_PUBLISHER** ——

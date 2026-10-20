@@ -37,6 +37,10 @@
       <div class="popMenu down" id="morePop" hidden>
         <button type="button" data-more="add">添加文件</button>
         <button type="button" data-more="re">重新识别</button>
+        <div class="popSep"></div>
+        <div class="popSep"></div>
+        <button type="button" data-more="update">检查更新</button>
+        <button type="button" data-more="diag">导出诊断包</button>
       </div>
     </div>
     <!-- 这两个按钮的原件保留（只是不显示），菜单里点的是它们的 click()，
@@ -186,9 +190,11 @@
   <div class="stat"><span class="k">异常</span><span class="v warn" id="stBad">0<small>张</small></span></div>
   <div class="stat"><span class="k">重复票号</span><span class="v warn" id="stDup">0<small>张</small></span></div>
   <!-- 筛选计数（v2.7.3）：从工具栏搬过来的 —— 原来挤在工具栏右侧会被压成竖排 -->
-  <div class="stat filt" id="statFilter" hidden>
-    <span class="k">筛选中</span><span class="v" id="stFilter">0 / 0</span>
-    <button type="button" class="statX" id="stFilterX" title="清空筛选，看全部" aria-label="清空筛选">✕</button>
+  <div class="statActs">
+    <button type="button" class="statBtn" id="btnHealth" title="看这批票的识别情况：哪种票、哪个字段没读到">
+      识别体检</button>
+    <button type="button" class="statBtn" id="btnReport" title="按客户 / 按月汇总，可打印报销单">
+      汇总报表</button>
   </div>
 </section>
 
@@ -198,15 +204,25 @@
   <section class="card master">
     <div class="toolbar">
       <button class="pill" id="btnAll">全选</button>
-      <button class="pill" id="btnNone">全不选</button>
-      <button class="pill" id="btnOnlyOk">仅选可识别</button>
+      <div class="tbMore" id="tbMore">
+        <button class="pill" id="btnTbMore" title="批量操作">批量 <span class="cv">▾</span></button>
+        <div class="popMenu down" id="tbMorePop" hidden>
+          <button type="button" data-act="none">全不选</button>
+          <button type="button" data-act="onlyok">仅选可识别</button>
+          <button type="button" data-act="rename">批量改名…</button>
+          <button type="button" data-act="del" class="dangerItem">删除选中</button>
+        </div>
+      </div>
+      <!-- 窄窗口下这几颗收进「批量 ▾」菜单；宽屏时照常平铺（见 v2.8.7 的 CSS） -->
+      <button class="pill tbAct" id="btnNone">全不选</button>
+      <button class="pill tbAct" id="btnOnlyOk">仅选可识别</button>
       <!-- 批量改名：对勾选的这批统一加前缀/后缀或替换文字 ——
            发票一多，逐行双击改名字很折磨 -->
-      <button class="pill" id="btnBatchRename" title="给勾选的这些统一加前缀、后缀或替换文字">
+      <button class="pill tbAct" id="btnBatchRename" title="给勾选的这些统一加前缀、后缀或替换文字">
         批量改名</button>
       <!-- 批量删除（v2.7.3）：勾一批（或筛出来再全选）一次移除，不用一行行点垃圾桶。
            ⚠️ 只从列表移除，绝不删磁盘文件；确认弹窗里会写清楚。 -->
-      <button class="pill danger" id="btnDelSel" disabled
+      <button class="pill danger tbAct" id="btnDelSel" disabled
               title="把勾选的行从列表移除（不会删除磁盘上的发票文件）">删除选中</button>
       <span class="sep"></span>
       <!-- 状态筛选（v2.7）：31 张票里 3 张「待核对」，以前只能自己一行行找。
@@ -255,7 +271,7 @@
                 stroke-linecap="round"/>
         </svg>
         <input class="searchInp" id="rowSearch" type="text" autocomplete="off"
-               placeholder="搜索购买方 / 文件名 / 发票号码…">
+               placeholder="搜索">
         <button class="searchX" id="rowSearchX" hidden
                 title="清空搜索" aria-label="清空搜索">✕</button>
       </div>
@@ -774,5 +790,41 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="app.js"></script>
+<!-- ============ 识别体检（v2.8.7） ============ -->
+<div class="modal" id="mHealth" hidden>
+  <div class="sheet" style="width:min(760px,92vw)">
+    <div class="sheetHead">
+      <h3>识别体检</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="sheetBody" id="healthBody"></div>
+    <div class="sheetFoot">
+      <span class="hint">点「看这些票」可直接筛出对应行</span>
+      <div class="spacer"></div>
+      <button class="btn ghost" data-close>关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 汇总报表（v2.8.7） ============ -->
+<div class="modal" id="mReport" hidden>
+  <div class="sheet" style="width:min(820px,94vw)">
+    <div class="sheetHead">
+      <h3>汇总报表</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="sheetBody" id="reportBody"></div>
+    <div class="sheetFoot">
+      <span class="hint" id="reportHint"></span>
+      <div class="spacer"></div>
+      <button class="btn ghost" id="btnPrintReport">打印报销单</button>
+      <button class="btn ghost" data-close>关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 打印专用区（屏幕上不显示，打印时只印它） -->
+<div id="printArea" aria-hidden="true"></div>
+
 </body>
 </html>

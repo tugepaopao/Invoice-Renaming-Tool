@@ -1,7 +1,7 @@
 ﻿; =============================================================
 ;  全电发票批量重命名工具 —— Windows 安装包脚本 (NSIS 3.x)
 ;  编译：makensis installer.nsi
-;  产物：安装包\发票批量重命名工具_安装程序_v2.8.4.exe
+;  产物：安装包\发票批量重命名工具_安装程序_v2.8.9.exe
 ; =============================================================
 
 Unicode true
@@ -15,7 +15,7 @@ SetCompressorDictSize 32
 ; ---------------- 基本信息 ----------------
 !define APP_NAME       "全电发票批量重命名工具"
 !define APP_ID         "InvoiceRenamer"
-!define APP_VERSION    "2.8.4"
+!define APP_VERSION    "2.8.9"
 !define APP_PUBLISHER  "石文豪"
 ; 作者署名（2026-10-17 业主指定）。跟 APP_PUBLISHER 是两回事：
 ;   发布者 = 装到「添加或删除程序」里显示的公司/个人名
@@ -35,7 +35,7 @@ RequestExecutionLevel user
 ShowInstDetails show
 ShowUninstDetails show
 
-VIProductVersion "2.8.4.0"
+VIProductVersion "2.8.9.0"
 VIAddVersionKey /LANG=2052 "ProductName"      "${APP_NAME}"
 VIAddVersionKey /LANG=2052 "FileDescription"  "${APP_NAME} 安装程序"
 VIAddVersionKey /LANG=2052 "FileVersion"      "${APP_VERSION}"

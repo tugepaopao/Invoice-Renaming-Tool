@@ -57,6 +57,8 @@
 - **批量删除**：勾一批 / 筛出来一批，一次从列表移除（不删磁盘文件）
 
 ### 界面
+- **识别体检**：按票种统计「购买方/金额/备注」命中率，哪个字段没读到一眼看出来
+- **汇总报表**：按客户 / 按月的条形汇总，可**打印报销单**（合计带大写 + 三处签字栏）
 - 三栏布局：列表 / 票面预览 / 字段定位，点行即看票
 - 左侧点字段，右侧票面框出位置，对不上时一眼看出是哪一栏读错了
 - 无系统标题栏，窗口按钮画在界面里（可用环境变量回退，见下）
@@ -72,8 +74,11 @@
 到 [Releases](https://github.com/tugepaopao/Invoice-Renaming-Tool/releases) 下载最新版：
 
 ```
-Invoice-Renaming-Tool-Setup-v2.8.4.exe   （约 26 MB）
+Invoice-Renaming-Tool-Setup-v2.8.9.exe          （安装版，约 27 MB）
+Invoice-Renaming-Tool-Portable-v2.8.9.zip       （免安装，解压即用）
 ```
+
+> 装不了软件的电脑用便携版：**先完整解压**，再双击里面的 exe（不要用压缩软件直接打开运行）。
 
 > 自己从源码打包时，产物是中文名的 `发票批量重命名工具_安装程序_v2.8.4.exe`，内容完全相同。
 
@@ -120,6 +125,8 @@ Invoice-Renaming-Tool-Setup-v2.8.4.exe   （约 26 MB）
 
 - **OFD 有两种形态**：标准数电票 OFD 带 `Tags/CustomTag.xml` 映射表；由 PDF 硬转的 OFD 没有映射表，只能**按坐标回退**（标签在 `PageBlock` 外，值在 `TextCode` 的 X/Y 上）。两种都要处理，否则一半的 OFD 会"识别不出金额"。
 - **竖排表头必须过滤**：「购 买 方 信 息」是一字一个 TextObject、同 x 逐字递增，不过滤会粘到字段值上。
+- **不足 1 元的票面不写「零圆」**：国标是「玖角伍分」，而程序拼串是「零圆玖角伍分」，
+  直接比字符串会把 0.95 元的通行费票误判成"大小写不一致"。比对时要容忍缺省前缀。
 - **大小写金额换算要逐位扫全串**：按「每 4 位一组」分别拼会漏掉跨组的「零」（`206867` 会算成「贰拾万陆佰…」）。
 - **20 位发票号码不能用 CSV**：Excel 打开 CSV 会变科学计数法、末几位丢失。台账一律 xlsx。
 - **无边框窗口**：`frameless=True` 会把缩放边框一起删掉，必须用 Win32 把 `WS_THICKFRAME` 补回来；拖动走 `WM_NCLBUTTONDOWN(HTCAPTION)`；顶部那条 8px 白边要用 `WM_NCCALCSIZE` + 一次 1px 抖动消掉。
@@ -158,6 +165,12 @@ NSIS 编译器项目里带了便携版（`tools/_nsis`），不用另装。
 .venv\Scripts\python.exe tools\test_check.py    # 66 项：大写金额 / 税号校验位 / 号码 / 日期
 .venv\Scripts\python.exe tools\test_bridge.py
 .venv\Scripts\python.exe tools\test_merge.py
+```
+
+遇到没见过的票种（机动车、航空行程单、收购发票…），先跑票种体检，看每个字段读没读到：
+
+```bash
+.venv\Scripts\python.exe tools\type_probe.py "C:/Users/你的用户名/Downloads/发票"
 ```
 
 `tests/` 里只放**合成样票**（文件名带「某某」的那些）。真实发票样本一律不入库——
@@ -205,6 +218,14 @@ A：三种可能：① 扫描件（没有文本层）；② PDF 加密（状态�
 
 **Q：想用系统原生的标题栏？**
 A：设环境变量 `INVOICE_NATIVE_FRAME=1` 再启动，窗口会回到带系统标题栏的样子。
+
+**Q：所有 PDF 都报 `cannot import name '_extra' from partially initialized module 'pymupdf'`？**
+A：程序文件不完整，不是发票的问题。八成是**直接在压缩包里双击了 exe**（只解到临时目录），
+或者杀软删掉了 `pymupdf\_extra.pyd`。用安装包装一遍，或把整个文件夹完整解压后再运行。
+
+**Q：出问题了怎么反馈？**
+A：右上角「⋯」→「导出诊断包」，会生成一个 zip（环境、组件自检、本批概况，**不含发票内容**），
+把它发过来比截图有用得多。
 
 **Q：会不会把我的发票上传到网上？**
 A：不会。工具全程离线，不发任何网络请求（唯一会联网的动作是你点作者名字打开这个 GitHub 页面）。
